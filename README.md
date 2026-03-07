@@ -4,6 +4,17 @@ A proof-of-concept binary outcome market protocol for MAG7 stocks (AAPL, MSFT, G
 
 **Core question:** "Will AAPL close above $230 today?" Buy Yes if you think so, Buy No if you don't. Winning tokens pay $1.00. Losing tokens pay $0.00.
 
+## Solana Devnet Deployment
+
+| | |
+|---|---|
+| **Network** | Solana Devnet |
+| **Program ID** | `2zchyfx482vagebbGJ2ePq8AuuafwS1Hc6YoSkgAfTe1` |
+| **Admin Wallet** | `BPsWi1a8v2FSKHd95jXoVkTMiMQ4AfuufdahgzT3qqhn` |
+| **Explorer** | [View on Solana Explorer](https://explorer.solana.com/address/2zchyfx482vagebbGJ2ePq8AuuafwS1Hc6YoSkgAfTe1?cluster=devnet) |
+| **RPC Endpoint** | `https://api.devnet.solana.com` |
+| **Framework** | Anchor 0.30.1 / Rust |
+
 ## Quick Start
 
 ### Prerequisites
