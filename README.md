@@ -180,6 +180,43 @@ Three factors made Tailwind the clear choice for a trading dashboard:
 
 The trade-off is longer `className` strings, but this is a worthwhile exchange for a prototype where iteration speed matters more than class name aesthetics.
 
+## Transaction Performance
+
+Solana's architecture gives Meridian sub-second transaction finality out of the box. Here's how each layer contributes to speed and what we'd do to push it further:
+
+### What Makes It Fast Now
+
+**On-chain (400ms block time)**:
+- Every instruction (mint, merge, place order, settle, redeem) executes in a single transaction with no cross-program invocations beyond SPL Token CPIs. No multi-step transaction flows, no intermediate states.
+- PDA-based account derivation means zero on-chain lookups. The client computes all account addresses deterministically and passes them in. The program just verifies seeds and bumps.
+- `Box<Account>` heap allocation keeps all instruction handlers under Solana's 4KB stack frame limit while avoiding account splitting (except for the unavoidable create_market/init_orderbook split).
+- All arithmetic uses `checked_*` operations. No unchecked math means no panic paths that waste compute.
+
+**Client-side (parallelism)**:
+- Account addresses are derived client-side via `PublicKey.findProgramAddressSync`. No RPC calls needed before constructing a transaction.
+- The frontend pre-fetches market data and orderbook state on page load with 5-15 second polling intervals, so when a user clicks "Buy Yes," the transaction is ready to send immediately.
+
+### Future Iterations for Even Faster Execution
+
+| Optimization | Impact | Effort |
+|-------------|--------|--------|
+| **Jito bundles** | Atomic multi-instruction execution (mint+sell for Buy No) in a single block, guaranteed ordering | Medium — Jito SDK integration |
+| **Priority fees** | Skip to front of block during congestion by bidding for compute | Low — add `computeBudget` instruction |
+| **Helius WebSocket subscriptions** | Real-time order book updates instead of 5s polling. Sub-100ms price display. | Low — swap polling for `onAccountChange` |
+| **Transaction pre-signing** | Pre-sign common transactions (e.g., cancel order) and store locally. One-click execution with no wallet popup. | Medium — UX improvement, not protocol change |
+| **Lookup tables (ALTs)** | Reduce transaction size by referencing accounts via index instead of full pubkey. Enables more instructions per tx. | Low — `createLookupTable` + `extendLookupTable` |
+| **Versioned transactions** | Required for ALTs. Also enables future Solana features (address tables, compute budget hints). | Low — already supported by wallet adapters |
+| **Cranking engine** | Off-chain service that matches orders and submits fill transactions. Separates order placement from matching. | High — new service, but eliminates on-chain matching latency |
+
+### Why Solana Over EVM for Speed
+
+An EVM L2 (Arbitrum, Base) would give ~250ms block times but with fundamentally different trade-offs:
+- EVM storage reads/writes are 10-100x more expensive in gas than Solana compute units
+- Solana's parallel transaction execution (Sealevel) processes non-overlapping accounts simultaneously; EVM is sequential
+- SPL Token operations are native runtime CPIs on Solana vs. external contract calls on EVM
+
+For an order book that needs to read/write market state, orderbook state, token accounts, and vault in a single atomic transaction, Solana's account model is architecturally faster than EVM's storage model.
+
 ## Potential Failure Modes
 
 1. **Oracle manipulation**: Compromised price feed settles markets incorrectly.
