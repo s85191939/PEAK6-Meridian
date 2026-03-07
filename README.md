@@ -155,9 +155,30 @@ OrderBook:   seeds = ["orderbook", market_key]
 | Oracle | Admin-submitted price | Pyth Network | Simulates oracle for MVP. Production would use Pyth pull-oracle with staleness/confidence checks. PEAK6 is a Pyth validator. |
 | No Token | Synthetic (via mint/merge) | Separate No book | Single book = no liquidity fragmentation. Same approach as Polymarket. |
 | Token Standard | SPL Token | Token-2022 | Simpler, better tooling. Token-2022 extensions not needed for binary tokens. |
-| Frontend | Next.js 14 + Tailwind | Scaffold template | Full control over trading UI. Custom dark theme, responsive design. |
-| State Mgmt | React hooks + Anchor | Redux/Zustand | Sufficient for this scope. Would add Zustand at 20+ pages. |
+| Frontend | Next.js 14 (App Router) | Create-Solana-dApp / Vite | App Router gives server components for SEO, file-based routing for clean URL structure (`/trade/[market]`), and built-in API routes if needed. Generic Solana scaffolds lack trading-specific UX patterns. |
+| Styling | Tailwind CSS | CSS Modules / styled-components | Utility-first approach enables rapid iteration on trading UI without context-switching between files. Co-located styles make components self-contained. Dark theme is a single `dark` class on `<html>`. No runtime CSS-in-JS overhead, which matters for a data-heavy trading dashboard that re-renders on every price tick. |
+| State Mgmt | React hooks + Anchor | Redux / Zustand | Anchor's `useProgram` + `useConnection` + `useWallet` hooks already provide the core state. Adding Redux would be overengineering for 3 pages. Would introduce Zustand if the app grew beyond 10+ pages with cross-cutting concerns. |
 | Market Creation | 2-step (create + init) | Single instruction | Solana's 4KB BPF stack frame limit requires splitting. Documented trade-off. |
+
+### Why Next.js 14 (App Router)
+
+The App Router was chosen over Pages Router or Vite SPA for three reasons:
+
+1. **File-based dynamic routes** map cleanly to the market model: `/trade/[market]` resolves each market's public key directly from the URL. No client-side router config needed.
+2. **Server Components** allow the markets listing page to pre-render static shells and hydrate with on-chain data client-side, avoiding a blank loading screen.
+3. **Built-in optimizations** (automatic code splitting, image optimization, font loading) reduce time-to-interactive for a data-heavy trading UI without manual webpack config.
+
+The trade-off is more complex SSR/hydration boundaries (every component using wallet hooks needs `'use client'`), but this is manageable for 3 pages.
+
+### Why Tailwind CSS
+
+Three factors made Tailwind the clear choice for a trading dashboard:
+
+1. **Speed of iteration**: Trading UIs require constant visual tuning (padding, colors, responsive breakpoints). Tailwind's utility classes eliminate the CSS file round-trip. A single `className` string describes the entire visual state.
+2. **Dark theme without complexity**: The entire app is dark-themed (Polymarket-style `bg-gray-950`). With Tailwind, this is one `dark` class on `<html>` plus dark-variant utilities. No theme provider, no CSS variables, no runtime overhead.
+3. **Zero runtime cost**: Unlike styled-components or Emotion, Tailwind compiles to static CSS at build time. For a trading UI that re-renders on every price update and order book change, zero runtime CSS overhead is a performance advantage.
+
+The trade-off is longer `className` strings, but this is a worthwhile exchange for a prototype where iteration speed matters more than class name aesthetics.
 
 ## Potential Failure Modes
 
