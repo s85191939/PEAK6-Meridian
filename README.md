@@ -39,6 +39,17 @@ npm run dev
 # Open http://localhost:3000
 ```
 
+### Deploy to Devnet
+
+```bash
+# Fund your wallet (may be rate-limited, retry after 8 hours or use https://faucet.solana.com)
+solana config set --url devnet
+solana airdrop 5
+
+# Deploy
+solana program deploy target/deploy/meridian.so --program-id target/deploy/meridian-keypair.json --url devnet
+```
+
 ### Run the Demo Lifecycle
 
 ```bash
