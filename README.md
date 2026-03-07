@@ -187,7 +187,7 @@ Solana's architecture gives Meridian sub-second transaction finality out of the 
 ### What Makes It Fast Now
 
 **On-chain (400ms block time)**:
-- Every instruction (mint, merge, place order, settle, redeem) executes in a single transaction with no cross-program invocations beyond SPL Token CPIs. No multi-step transaction flows, no intermediate states.
+- **Single-transaction execution**: Every user action (mint, merge, place order, settle, redeem) completes in one atomic Solana transaction. Compare this to EVM, where a simple token swap requires two transactions (approve + swap). On Meridian, when a user clicks "Mint Pair," one transaction moves USDC to the vault and mints both Yes and No tokens to the user — all in ~400ms. No approval step, no intermediate states, no second wallet popup. This is possible because Solana's account model lets the program read and write multiple accounts (vault, two token mints, user's three token accounts) in a single instruction, and the user's signature authorizes all of it at once.
 - PDA-based account derivation means zero on-chain lookups. The client computes all account addresses deterministically and passes them in. The program just verifies seeds and bumps.
 - `Box<Account>` heap allocation keeps all instruction handlers under Solana's 4KB stack frame limit while avoiding account splitting (except for the unavoidable create_market/init_orderbook split).
 - All arithmetic uses `checked_*` operations. No unchecked math means no panic paths that waste compute.
