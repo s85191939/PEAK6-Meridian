@@ -11,6 +11,7 @@ test-ledger
 .yarn
 .env
 *.pem
+demo-wallet.json
 app/.next
 app/out
 *.pdf

@@ -7,6 +7,7 @@ import { Program, AnchorProvider, BN } from "@coral-xyz/anchor";
 import Link from "next/link";
 import OrderBook from "@/components/OrderBook";
 import TradePanel from "@/components/TradePanel";
+import CountdownTimer from "@/components/CountdownTimer";
 import { MarketData } from "@/components/MarketCard";
 import {
   formatStrikePrice,
@@ -33,6 +34,7 @@ export default function TradePage({
 
   const fetchMarket = useCallback(async () => {
     try {
+      setError(null);
       const marketPubkey = new PublicKey(marketAddress);
 
       const provider = new AnchorProvider(
@@ -65,7 +67,7 @@ export default function TradePage({
       });
     } catch (err) {
       console.error("Failed to fetch market:", err);
-      setError("Market not found or failed to load.");
+      setError("Market not found or failed to load. Check your connection to Solana Devnet.");
     } finally {
       setLoading(false);
     }
@@ -86,7 +88,7 @@ export default function TradePage({
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-yellow-500 border-t-transparent" />
           <span className="text-sm text-gray-400">Loading market...</span>
         </div>
       </div>
@@ -96,32 +98,45 @@ export default function TradePage({
   if (error || !market) {
     return (
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-        <div className="flex min-h-[400px] flex-col items-center justify-center rounded-xl border border-gray-800 bg-gray-900 p-8">
-          <svg
-            className="mb-4 h-12 w-12 text-red-500"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
-            />
-          </svg>
-          <h3 className="mb-2 text-lg font-semibold text-white">
+        <div className="flex min-h-[400px] flex-col items-center justify-center rounded-2xl border border-gray-800/60 bg-gray-900/50 p-8">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-red-500/10">
+            <svg
+              className="h-8 w-8 text-red-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
+              />
+            </svg>
+          </div>
+          <h3 className="mb-2 text-lg font-bold text-white">
             Market Not Found
           </h3>
-          <p className="mb-4 text-sm text-gray-500">
+          <p className="mb-4 text-center text-sm text-gray-500">
             {error ?? "This market could not be loaded."}
           </p>
-          <Link
-            href="/"
-            className="rounded-lg bg-gray-800 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700"
-          >
-            Back to Markets
-          </Link>
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                setLoading(true);
+                fetchMarket();
+              }}
+              className="rounded-xl bg-gray-800/80 px-4 py-2 text-sm font-bold text-gray-300 hover:bg-gray-700 transition-colors"
+            >
+              Retry
+            </button>
+            <Link
+              href="/"
+              className="rounded-xl bg-yellow-500 px-4 py-2 text-sm font-bold text-black hover:bg-yellow-400 transition-colors"
+            >
+              Back to Markets
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -151,19 +166,21 @@ export default function TradePage({
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       {/* Breadcrumb */}
       <div className="mb-6 flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/" className="hover:text-gray-300">
+        <Link href="/" className="hover:text-gray-300 transition-colors">
           Markets
         </Link>
-        <span>/</span>
-        <span className="text-gray-300">{market.ticker}</span>
+        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+        </svg>
+        <span className="font-medium text-gray-300">{market.ticker}</span>
       </div>
 
       {/* Market Header */}
-      <div className="mb-8 rounded-xl border border-gray-800 bg-gray-900 p-6">
+      <div className="mb-8 rounded-2xl border border-gray-800/60 bg-gray-900/50 p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-4">
             <div
-              className="flex h-12 w-12 items-center justify-center rounded-xl text-lg font-bold text-white"
+              className="flex h-14 w-14 items-center justify-center rounded-2xl text-lg font-bold text-white shadow-lg"
               style={{ backgroundColor: tickerInfo?.color ?? "#6B7280" }}
             >
               {market.ticker.slice(0, 2)}
@@ -173,27 +190,38 @@ export default function TradePage({
                 Will {market.ticker} close above{" "}
                 {formatStrikePrice(market.strikePrice)}?
               </h1>
-              <p className="mt-1 text-sm text-gray-500">
-                {tickerInfo?.name ?? market.ticker} &middot; Expiry:{" "}
-                {formatMarketDate(market.date)} &middot; Vol:{" "}
-                {market.totalPairsMinted.toNumber().toLocaleString()} pairs
-              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-gray-500">
+                <span>{tickerInfo?.name ?? market.ticker}</span>
+                <span className="text-gray-700">&middot;</span>
+                <span>{formatMarketDate(market.date)}</span>
+                <span className="text-gray-700">&middot;</span>
+                <span className="font-mono">{market.totalPairsMinted.toNumber().toLocaleString()} pairs</span>
+                {!market.settled && !expired && (
+                  <>
+                    <span className="text-gray-700">&middot;</span>
+                    <CountdownTimer date={market.date} />
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             {market.settled ? (
-              <span className="inline-flex items-center rounded-full bg-gray-700 px-3 py-1 text-sm font-medium text-gray-300">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-700/50 px-3 py-1.5 text-sm font-semibold text-gray-300">
+                <span className="h-2 w-2 rounded-full bg-gray-400" />
                 Settled &middot;{" "}
                 {market.outcomeYesWins ? "Yes Won" : "No Won"}
               </span>
             ) : expired ? (
-              <span className="inline-flex items-center rounded-full bg-yellow-900/50 px-3 py-1 text-sm font-medium text-yellow-400">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-yellow-500/10 px-3 py-1.5 text-sm font-semibold text-yellow-400 ring-1 ring-inset ring-yellow-500/20">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-yellow-400" />
                 Awaiting Settlement
               </span>
             ) : (
-              <span className="inline-flex items-center rounded-full bg-emerald-900/50 px-3 py-1 text-sm font-medium text-emerald-400">
-                Active
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-yellow-500/10 px-3 py-1.5 text-sm font-semibold text-yellow-400 ring-1 ring-inset ring-yellow-500/20">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-yellow-400" />
+                Live
               </span>
             )}
           </div>
@@ -201,16 +229,22 @@ export default function TradePage({
 
         {/* Price display */}
         <div className="mt-6 grid grid-cols-2 gap-4">
-          <div className="rounded-xl bg-emerald-500/10 p-4">
-            <span className="text-sm text-gray-400">Yes Price</span>
-            <p className="mt-1 text-3xl font-bold text-emerald-400">
-              {yesPrice}\u00A2
+          <div className="rounded-2xl bg-emerald-500/8 p-5 ring-1 ring-inset ring-emerald-500/15">
+            <span className="text-sm font-medium text-gray-400">Yes Price</span>
+            <p className="mt-1 font-mono text-4xl font-bold text-emerald-400">
+              {yesPrice}&cent;
+            </p>
+            <p className="mt-1 text-xs text-gray-500">
+              Pays $1.00 if {market.ticker} closes above {formatStrikePrice(market.strikePrice)}
             </p>
           </div>
-          <div className="rounded-xl bg-red-500/10 p-4">
-            <span className="text-sm text-gray-400">No Price</span>
-            <p className="mt-1 text-3xl font-bold text-red-400">
-              {noPrice}\u00A2
+          <div className="rounded-2xl bg-red-500/8 p-5 ring-1 ring-inset ring-red-500/15">
+            <span className="text-sm font-medium text-gray-400">No Price</span>
+            <p className="mt-1 font-mono text-4xl font-bold text-red-400">
+              {noPrice}&cent;
+            </p>
+            <p className="mt-1 text-xs text-gray-500">
+              Pays $1.00 if {market.ticker} closes below {formatStrikePrice(market.strikePrice)}
             </p>
           </div>
         </div>

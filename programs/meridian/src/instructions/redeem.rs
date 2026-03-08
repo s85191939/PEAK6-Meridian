@@ -28,7 +28,7 @@ pub fn handler(ctx: Context<Redeem>, amount: u64) -> Result<()> {
     };
 
     // Burn the tokens regardless (cleaning up supply)
-    let burn_ctx = if is_redeeming_yes {
+    token::burn(
         CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
             Burn {
@@ -36,18 +36,9 @@ pub fn handler(ctx: Context<Redeem>, amount: u64) -> Result<()> {
                 from: ctx.accounts.user_token.to_account_info(),
                 authority: ctx.accounts.user.to_account_info(),
             },
-        )
-    } else {
-        CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Burn {
-                mint: ctx.accounts.token_mint.to_account_info(),
-                from: ctx.accounts.user_token.to_account_info(),
-                authority: ctx.accounts.user.to_account_info(),
-            },
-        )
-    };
-    token::burn(burn_ctx, amount)?;
+        ),
+        amount,
+    )?;
 
     // If winner, transfer USDC from vault to user
     if is_winner {

@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useConnection } from "@solana/wallet-adapter-react";
 import { PublicKey } from "@solana/web3.js";
 import { Program, AnchorProvider, BN } from "@coral-xyz/anchor";
-import { findOrderbookPda, formatPrice, priceToPercent } from "@/lib/utils";
+import { findOrderbookPda, priceToPercent } from "@/lib/utils";
 import { PRICE_DECIMALS } from "@/lib/constants";
 import type { Meridian } from "../../target/types/meridian";
 import idl from "../../target/idl/meridian.json";
@@ -38,10 +38,11 @@ export default function OrderBook({ marketPubkey, onPriceUpdate }: OrderBookProp
   const [asks, setAsks] = useState<PriceLevel[]>([]);
   const [spread, setSpread] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchOrderbook = useCallback(async () => {
     try {
-      // Create a read-only provider
+      setError(null);
       const provider = new AnchorProvider(
         connection,
         {
@@ -85,7 +86,6 @@ export default function OrderBook({ marketPubkey, onPriceUpdate }: OrderBookProp
         }
       }
 
-      // Sort bids descending, asks ascending
       const sortedBids = Array.from(bidMap.values()).sort(
         (a, b) => b.price - a.price
       );
@@ -93,26 +93,22 @@ export default function OrderBook({ marketPubkey, onPriceUpdate }: OrderBookProp
         (a, b) => a.price - b.price
       );
 
-      setBids(sortedBids.slice(0, 10));
-      setAsks(sortedAsks.slice(0, 10));
+      setBids(sortedBids.slice(0, 8));
+      setAsks(sortedAsks.slice(0, 8));
 
-      // Calculate spread
       const bestBid = sortedBids.length > 0 ? sortedBids[0] : null;
       const bestAsk = sortedAsks.length > 0 ? sortedAsks[0] : null;
 
       if (bestBid && bestAsk) {
-        const s = bestAsk.price - bestBid.price;
-        setSpread(s);
+        setSpread(bestAsk.price - bestBid.price);
       } else {
         setSpread(null);
       }
 
-      onPriceUpdate?.(
-        bestBid?.priceBn ?? null,
-        bestAsk?.priceBn ?? null
-      );
+      onPriceUpdate?.(bestBid?.priceBn ?? null, bestAsk?.priceBn ?? null);
     } catch (err) {
       console.error("Failed to fetch orderbook:", err);
+      setError("Failed to load order book");
     } finally {
       setLoading(false);
     }
@@ -135,8 +131,8 @@ export default function OrderBook({ marketPubkey, onPriceUpdate }: OrderBookProp
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-        <h3 className="mb-4 text-sm font-semibold text-white">Order Book</h3>
+      <div className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-5">
+        <h3 className="mb-4 text-sm font-bold text-white">Order Book</h3>
         <div className="flex h-64 items-center justify-center">
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
         </div>
@@ -144,38 +140,55 @@ export default function OrderBook({ marketPubkey, onPriceUpdate }: OrderBookProp
     );
   }
 
+  if (error) {
+    return (
+      <div className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-5">
+        <h3 className="mb-4 text-sm font-bold text-white">Order Book</h3>
+        <div className="flex h-64 flex-col items-center justify-center gap-3">
+          <p className="text-sm text-red-400">{error}</p>
+          <button
+            onClick={() => { setLoading(true); fetchOrderbook(); }}
+            className="rounded-lg bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-gray-700"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+    <div className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-5">
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-white">Order Book</h3>
-        <span className="text-xs text-gray-500">Yes / USDC</span>
+        <h3 className="text-sm font-bold text-white">Order Book</h3>
+        <span className="text-[11px] font-medium text-gray-500">Yes / USDC</span>
       </div>
 
       {/* Header */}
-      <div className="mb-2 grid grid-cols-3 text-xs font-medium text-gray-500">
+      <div className="mb-2 grid grid-cols-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
         <span>Price</span>
-        <span className="text-right">Qty</span>
-        <span className="text-right">Total</span>
+        <span className="text-right">Quantity</span>
+        <span className="text-right">Orders</span>
       </div>
 
       {/* Asks (reversed so lowest ask is at bottom) */}
-      <div className="space-y-0.5">
+      <div className="space-y-px">
         {asks.length === 0 ? (
-          <div className="py-3 text-center text-xs text-gray-600">
+          <div className="py-4 text-center text-xs text-gray-600">
             No asks
           </div>
         ) : (
           [...asks].reverse().map((level) => (
-            <div key={`ask-${level.price}`} className="relative">
+            <div key={`ask-${level.price}`} className="relative rounded-md">
               <div
-                className="absolute inset-y-0 right-0 bg-red-500/10"
+                className="absolute inset-y-0 right-0 rounded-md bg-red-500/8"
                 style={{
                   width: `${(level.totalQuantity / maxQuantity) * 100}%`,
                 }}
               />
-              <div className="relative grid grid-cols-3 py-1 text-xs">
-                <span className="font-mono text-red-400">
-                  {(level.price / divisor).toFixed(2)}
+              <div className="relative grid grid-cols-3 py-1.5 text-xs">
+                <span className="font-mono font-semibold text-red-400">
+                  ${(level.price / divisor).toFixed(2)}
                 </span>
                 <span className="text-right font-mono text-gray-400">
                   {(level.totalQuantity / qtyDivisor).toFixed(0)}
@@ -190,12 +203,12 @@ export default function OrderBook({ marketPubkey, onPriceUpdate }: OrderBookProp
       </div>
 
       {/* Spread */}
-      <div className="my-2 flex items-center justify-center border-y border-gray-800 py-2">
+      <div className="my-2 flex items-center justify-center rounded-lg border border-gray-800/50 bg-gray-800/30 py-2">
         <span className="text-xs text-gray-500">
           Spread:{" "}
-          <span className="font-mono text-gray-400">
+          <span className="font-mono font-semibold text-gray-300">
             {spread !== null
-              ? `${(spread / divisor).toFixed(2)} (${priceToPercent(
+              ? `$${(spread / divisor).toFixed(2)} (${priceToPercent(
                   new BN(spread)
                 )}%)`
               : "--"}
@@ -204,23 +217,23 @@ export default function OrderBook({ marketPubkey, onPriceUpdate }: OrderBookProp
       </div>
 
       {/* Bids */}
-      <div className="space-y-0.5">
+      <div className="space-y-px">
         {bids.length === 0 ? (
-          <div className="py-3 text-center text-xs text-gray-600">
+          <div className="py-4 text-center text-xs text-gray-600">
             No bids
           </div>
         ) : (
           bids.map((level) => (
-            <div key={`bid-${level.price}`} className="relative">
+            <div key={`bid-${level.price}`} className="relative rounded-md">
               <div
-                className="absolute inset-y-0 right-0 bg-emerald-500/10"
+                className="absolute inset-y-0 right-0 rounded-md bg-emerald-500/8"
                 style={{
                   width: `${(level.totalQuantity / maxQuantity) * 100}%`,
                 }}
               />
-              <div className="relative grid grid-cols-3 py-1 text-xs">
-                <span className="font-mono text-emerald-400">
-                  {(level.price / divisor).toFixed(2)}
+              <div className="relative grid grid-cols-3 py-1.5 text-xs">
+                <span className="font-mono font-semibold text-emerald-400">
+                  ${(level.price / divisor).toFixed(2)}
                 </span>
                 <span className="text-right font-mono text-gray-400">
                   {(level.totalQuantity / qtyDivisor).toFixed(0)}

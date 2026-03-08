@@ -79,6 +79,30 @@ async function main() {
   const config = await program.account.config.fetch(configPda);
   const usdcMint = config.usdcMint;
 
+  // Derive registry PDA
+  const [registryPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("market_registry")],
+    program.programId
+  );
+
+  // Ensure registry is initialized
+  try {
+    await program.account.marketRegistry.fetch(registryPda);
+    console.log(`   Registry: already initialized`);
+  } catch {
+    console.log(`   Initializing market registry...`);
+    await program.methods
+      .initRegistry()
+      .accounts({
+        admin: admin.publicKey,
+        config: configPda,
+        marketRegistry: registryPda,
+        systemProgram: SystemProgram.programId,
+      } as any)
+      .rpc();
+    console.log(`   ✅ Registry initialized\n`);
+  }
+
   let marketsCreated = 0;
 
   for (const [ticker, prevClose] of Object.entries(MAG7_STOCKS)) {
@@ -117,6 +141,14 @@ async function main() {
         [Buffer.from("orderbook"), marketPda.toBuffer()],
         program.programId
       );
+      const [escrowYesPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("escrow_yes"), marketPda.toBuffer()],
+        program.programId
+      );
+      const [bidEscrowPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("bid_escrow"), marketPda.toBuffer()],
+        program.programId
+      );
 
       try {
         // Step 1: Create market + mints
@@ -145,6 +177,44 @@ async function main() {
             usdcMint: usdcMint,
             tokenProgram: TOKEN_PROGRAM_ID,
             systemProgram: SystemProgram.programId,
+          } as any)
+          .rpc();
+
+        // Step 3: Init escrow accounts for trading
+        await program.methods
+          .initEscrowYes()
+          .accounts({
+            admin: admin.publicKey,
+            config: configPda,
+            market: marketPda,
+            escrowYes: escrowYesPda,
+            yesMint: yesMintPda,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          } as any)
+          .rpc();
+
+        await program.methods
+          .initBidEscrow()
+          .accounts({
+            admin: admin.publicKey,
+            config: configPda,
+            market: marketPda,
+            bidEscrow: bidEscrowPda,
+            usdcMint: usdcMint,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          } as any)
+          .rpc();
+
+        // Step 4: Register market in frontend registry
+        await program.methods
+          .registerMarket()
+          .accounts({
+            admin: admin.publicKey,
+            config: configPda,
+            marketRegistry: registryPda,
+            market: marketPda,
           } as any)
           .rpc();
 

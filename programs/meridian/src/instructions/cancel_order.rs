@@ -77,6 +77,9 @@ pub fn handler(ctx: Context<CancelOrder>, order_id: u64) -> Result<()> {
     // Mark order as cancelled
     orderbook.orders[order_idx].cancelled = true;
 
+    // Compact: remove fully-filled and cancelled orders to prevent DoS
+    orderbook.orders.retain(|o| o.is_active());
+
     msg!("Order {} cancelled, collateral returned", order_id);
     Ok(())
 }

@@ -82,6 +82,27 @@ async function main() {
   console.log(`   ✅ Config PDA: ${configPda.toBase58()}`);
 
   // ──────────────────────────────────────────
+  // Step 1b: Initialize Market Registry
+  // ──────────────────────────────────────────
+  console.log("\n📋 Step 1b: Initializing market registry...");
+
+  const [registryPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("market_registry")],
+    program.programId
+  );
+
+  await program.methods
+    .initRegistry()
+    .accounts({
+      admin: admin.publicKey,
+      config: configPda,
+      marketRegistry: registryPda,
+      systemProgram: SystemProgram.programId,
+    } as any)
+    .rpc();
+  console.log(`   ✅ Registry PDA: ${registryPda.toBase58()}`);
+
+  // ──────────────────────────────────────────
   // Step 2: Create Market — "AAPL > $230 on 2026-03-06"
   // ──────────────────────────────────────────
   console.log('\n📊 Step 2: Creating market "AAPL > $230"...');
@@ -145,7 +166,56 @@ async function main() {
     } as any)
     .rpc();
 
+  // Step 2c: Init escrow accounts for trading
+  const [escrowYesPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("escrow_yes"), marketPda.toBuffer()],
+    program.programId
+  );
+  const [bidEscrowPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("bid_escrow"), marketPda.toBuffer()],
+    program.programId
+  );
+
+  await program.methods
+    .initEscrowYes()
+    .accounts({
+      admin: admin.publicKey,
+      config: configPda,
+      market: marketPda,
+      escrowYes: escrowYesPda,
+      yesMint: yesMintPda,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    } as any)
+    .rpc();
+
+  await program.methods
+    .initBidEscrow()
+    .accounts({
+      admin: admin.publicKey,
+      config: configPda,
+      market: marketPda,
+      bidEscrow: bidEscrowPda,
+      usdcMint: usdcMint,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    } as any)
+    .rpc();
+
+  // Step 2d: Register market in frontend registry
+  await program.methods
+    .registerMarket()
+    .accounts({
+      admin: admin.publicKey,
+      config: configPda,
+      marketRegistry: registryPda,
+      market: marketPda,
+    } as any)
+    .rpc();
+
   console.log(`   ✅ Market: ${marketPda.toBase58()}`);
+  console.log(`   ✅ Escrow accounts initialized (Yes + USDC bid)`);
+  console.log(`   ✅ Market registered in frontend registry`);
   console.log(`   Question: "Will AAPL close above $230.00 on 2026-03-06?"`);
 
   // ──────────────────────────────────────────

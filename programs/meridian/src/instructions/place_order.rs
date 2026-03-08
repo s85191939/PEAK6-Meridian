@@ -110,6 +110,7 @@ pub fn handler<'info>(
                 .ok_or(MeridianError::MathOverflow)?
                 .checked_div(1_000_000)
                 .ok_or(MeridianError::MathOverflow)? as u64;
+            require!(fill_usdc > 0, MeridianError::MathOverflow);
 
             // Yes: escrow_yes → bidder (taker)
             token::transfer(
@@ -159,10 +160,8 @@ pub fn handler<'info>(
             .checked_div(1_000_000)
             .ok_or(MeridianError::MathOverflow)? as u64;
         let refund = total_locked
-            .checked_sub(total_usdc_matched)
-            .ok_or(MeridianError::MathOverflow)?
-            .checked_sub(resting_lock)
-            .ok_or(MeridianError::MathOverflow)?;
+            .saturating_sub(total_usdc_matched)
+            .saturating_sub(resting_lock);
         if refund > 0 {
             token::transfer(
                 CpiContext::new_with_signer(
@@ -201,6 +200,7 @@ pub fn handler<'info>(
                 .ok_or(MeridianError::MathOverflow)?
                 .checked_div(1_000_000)
                 .ok_or(MeridianError::MathOverflow)? as u64;
+            require!(fill_usdc > 0, MeridianError::MathOverflow);
 
             // USDC: bid_escrow → asker (taker)
             token::transfer(
@@ -236,6 +236,9 @@ pub fn handler<'info>(
             total_filled += fill_qty;
         }
     }
+
+    // ── Phase 2.5: Compact order book — remove fully-filled and cancelled orders ──
+    orderbook.orders.retain(|o| o.is_active());
 
     // ── Phase 3: Add resting order (if any unfilled quantity) ─────
     let resting_qty = quantity - total_filled;

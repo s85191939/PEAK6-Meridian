@@ -5,6 +5,7 @@ import Link from "next/link";
 import BN from "bn.js";
 import { PublicKey } from "@solana/web3.js";
 import { MAG7_TICKERS } from "@/lib/constants";
+import CountdownTimer from "./CountdownTimer";
 import {
   formatStrikePrice,
   formatMarketDate,
@@ -45,26 +46,28 @@ export default function MarketCard({ market }: { market: MarketData }) {
   const tickerInfo = MAG7_TICKERS[market.ticker];
   const yesPrice = getYesPrice(market);
   const noPrice = 100 - yesPrice;
-
   const expired = isExpired(market.date);
 
   let statusBadge: React.ReactNode = null;
   if (market.settled) {
     statusBadge = (
-      <span className="inline-flex items-center rounded-full bg-gray-700 px-2.5 py-0.5 text-xs font-medium text-gray-300">
-        Settled
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-700/50 px-2.5 py-1 text-[11px] font-semibold text-gray-300">
+        <span className="h-1.5 w-1.5 rounded-full bg-gray-400" />
+        Settled &middot; {market.outcomeYesWins ? "Yes" : "No"} Won
       </span>
     );
   } else if (expired) {
     statusBadge = (
-      <span className="inline-flex items-center rounded-full bg-yellow-900/50 px-2.5 py-0.5 text-xs font-medium text-yellow-400">
-        Awaiting Settlement
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-yellow-500/10 px-2.5 py-1 text-[11px] font-semibold text-yellow-400 ring-1 ring-inset ring-yellow-500/20">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-yellow-400" />
+        Pending
       </span>
     );
   } else {
     statusBadge = (
-      <span className="inline-flex items-center rounded-full bg-emerald-900/50 px-2.5 py-0.5 text-xs font-medium text-emerald-400">
-        Active
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-yellow-500/10 px-2.5 py-1 text-[11px] font-semibold text-yellow-400 ring-1 ring-inset ring-yellow-500/20">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-yellow-400" />
+        Live
       </span>
     );
   }
@@ -72,19 +75,19 @@ export default function MarketCard({ market }: { market: MarketData }) {
   return (
     <Link
       href={`/trade/${market.publicKey.toBase58()}`}
-      className="group block rounded-xl border border-gray-800 bg-gray-900 p-5 transition-all hover:border-gray-700 hover:bg-gray-900/80"
+      className="group block rounded-2xl border border-gray-800/60 bg-gray-900/50 p-5 transition-all duration-300 hover:border-yellow-500/20 hover:bg-gray-900/80 hover:shadow-xl hover:shadow-yellow-500/5"
     >
       {/* Header */}
       <div className="mb-4 flex items-start justify-between">
         <div className="flex items-center gap-3">
           <div
-            className="flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold text-white"
+            className="flex h-11 w-11 items-center justify-center rounded-xl text-sm font-bold text-white shadow-lg"
             style={{ backgroundColor: tickerInfo?.color ?? "#6B7280" }}
           >
             {market.ticker.slice(0, 2)}
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-white">
+            <h3 className="text-sm font-bold text-white">
               {market.ticker}
             </h3>
             <p className="text-xs text-gray-500">
@@ -96,7 +99,7 @@ export default function MarketCard({ market }: { market: MarketData }) {
       </div>
 
       {/* Question */}
-      <p className="mb-4 text-sm text-gray-300">
+      <p className="mb-4 text-sm leading-relaxed text-gray-300">
         Will <span className="font-semibold text-white">{market.ticker}</span>{" "}
         close above{" "}
         <span className="font-semibold text-white">
@@ -109,15 +112,15 @@ export default function MarketCard({ market }: { market: MarketData }) {
       <div className="space-y-2">
         {/* Yes */}
         <div className="flex items-center gap-3">
-          <span className="w-8 text-xs font-medium text-emerald-400">Yes</span>
-          <div className="relative h-8 flex-1 overflow-hidden rounded-lg bg-gray-800">
+          <span className="w-8 text-xs font-bold text-emerald-400">Yes</span>
+          <div className="relative h-9 flex-1 overflow-hidden rounded-xl bg-gray-800/60">
             <div
-              className="absolute inset-y-0 left-0 rounded-lg bg-emerald-500/20 transition-all duration-500"
-              style={{ width: `${yesPrice}%` }}
+              className="absolute inset-y-0 left-0 rounded-xl bg-gradient-to-r from-emerald-500/25 to-emerald-500/10 transition-all duration-700"
+              style={{ width: `${Math.max(yesPrice, 2)}%` }}
             />
             <div className="relative flex h-full items-center px-3">
               <span className="text-sm font-bold text-emerald-400">
-                {yesPrice}\u00A2
+                {yesPrice}&cent;
               </span>
             </div>
           </div>
@@ -125,15 +128,15 @@ export default function MarketCard({ market }: { market: MarketData }) {
 
         {/* No */}
         <div className="flex items-center gap-3">
-          <span className="w-8 text-xs font-medium text-red-400">No</span>
-          <div className="relative h-8 flex-1 overflow-hidden rounded-lg bg-gray-800">
+          <span className="w-8 text-xs font-bold text-red-400">No</span>
+          <div className="relative h-9 flex-1 overflow-hidden rounded-xl bg-gray-800/60">
             <div
-              className="absolute inset-y-0 left-0 rounded-lg bg-red-500/20 transition-all duration-500"
-              style={{ width: `${noPrice}%` }}
+              className="absolute inset-y-0 left-0 rounded-xl bg-gradient-to-r from-red-500/25 to-red-500/10 transition-all duration-700"
+              style={{ width: `${Math.max(noPrice, 2)}%` }}
             />
             <div className="relative flex h-full items-center px-3">
               <span className="text-sm font-bold text-red-400">
-                {noPrice}\u00A2
+                {noPrice}&cent;
               </span>
             </div>
           </div>
@@ -141,11 +144,19 @@ export default function MarketCard({ market }: { market: MarketData }) {
       </div>
 
       {/* Footer */}
-      <div className="mt-4 flex items-center justify-between text-xs text-gray-500">
-        <span>
-          Vol: {market.totalPairsMinted.toNumber().toLocaleString()} pairs
-        </span>
-        <span className="text-gray-600 transition-colors group-hover:text-gray-400">
+      <div className="mt-4 flex items-center justify-between">
+        <div className="flex items-center gap-3 text-xs text-gray-500">
+          <span className="font-mono">
+            {market.totalPairsMinted.toNumber().toLocaleString()} pairs
+          </span>
+          {!market.settled && !expired && (
+            <>
+              <span className="text-gray-700">&middot;</span>
+              <CountdownTimer date={market.date} />
+            </>
+          )}
+        </div>
+        <span className="text-xs font-medium text-gray-600 transition-colors group-hover:text-yellow-400">
           Trade &rarr;
         </span>
       </div>
