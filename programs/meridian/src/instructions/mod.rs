@@ -1,5 +1,6 @@
 pub mod initialize;
 pub mod create_market;
+pub mod add_strike;
 pub mod register_market;
 pub mod init_orderbook;
 pub mod init_escrows;
@@ -10,11 +11,14 @@ pub mod place_order;
 pub mod cancel_order;
 pub mod settle;
 pub mod redeem;
+pub mod pause;
 
 #[allow(ambiguous_glob_reexports)]
 pub use initialize::*;
 #[allow(ambiguous_glob_reexports)]
 pub use create_market::*;
+#[allow(ambiguous_glob_reexports)]
+pub use add_strike::*;
 #[allow(ambiguous_glob_reexports)]
 pub use register_market::*;
 #[allow(ambiguous_glob_reexports)]
@@ -35,3 +39,5 @@ pub use cancel_order::*;
 pub use settle::*;
 #[allow(ambiguous_glob_reexports)]
 pub use redeem::*;
+#[allow(ambiguous_glob_reexports)]
+pub use pause::*;

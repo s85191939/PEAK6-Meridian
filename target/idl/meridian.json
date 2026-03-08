@@ -328,6 +328,9 @@
           "signer": true
         },
         {
+          "name": "config"
+        },
+        {
           "name": "market",
           "writable": true
         },
@@ -386,6 +389,9 @@
           "signer": true
         },
         {
+          "name": "config"
+        },
+        {
           "name": "market",
           "writable": true
         },
@@ -442,6 +448,9 @@
           "name": "user",
           "writable": true,
           "signer": true
+        },
+        {
+          "name": "config"
         },
         {
           "name": "market"
@@ -619,6 +628,112 @@
           "type": "u64"
         }
       ]
+    },
+    {
+      "name": "pause",
+      "discriminator": [
+        211,
+        22,
+        221,
+        251,
+        74,
+        121,
+        193,
+        47
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "unpause",
+      "discriminator": [
+        169,
+        144,
+        4,
+        38,
+        10,
+        141,
+        188,
+        255
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "addStrike",
+      "discriminator": [
+        226,
+        190,
+        94,
+        4,
+        5,
+        106,
+        15,
+        120
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "yesMint",
+          "writable": true
+        },
+        {
+          "name": "noMint",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "ticker",
+          "type": "string"
+        },
+        {
+          "name": "strikePrice",
+          "type": "u64"
+        },
+        {
+          "name": "date",
+          "type": "u32"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -770,6 +885,11 @@
       "code": 6018,
       "name": "registryFull",
       "msg": "Market registry is full"
+    },
+    {
+      "code": 6019,
+      "name": "protocolPaused",
+      "msg": "Protocol is paused — minting, trading, and merging are disabled"
     }
   ],
   "types": [
@@ -789,6 +909,10 @@
           {
             "name": "marketCount",
             "type": "u64"
+          },
+          {
+            "name": "paused",
+            "type": "bool"
           },
           {
             "name": "bump",

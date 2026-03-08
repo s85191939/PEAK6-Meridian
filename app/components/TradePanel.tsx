@@ -177,6 +177,7 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
           .mintPair(quantityBn)
           .accounts({
             user: publicKey,
+            config: configPda,
             market: marketKey,
             yesMint: market.yesMint,
             noMint: market.noMint,
@@ -184,7 +185,7 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
             userUsdc,
             userYes,
             userNo,
-          })
+          } as any)
           .instruction();
         tx.add(mintIx);
 
@@ -192,13 +193,14 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
           .placeOrder(false, yesOrderPrice, quantityBn)
           .accounts({
             user: publicKey,
+            config: configPda,
             market: marketKey,
             orderbook: orderbookPda,
             bidEscrow: bidEscrowPda,
             userUsdc,
             userYes,
             escrowYes: escrowYesPda,
-          })
+          } as any)
           .instruction();
         tx.add(placeIx);
       } else if (action === "sell_no") {
@@ -206,13 +208,14 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
           .placeOrder(true, yesOrderPrice, quantityBn)
           .accounts({
             user: publicKey,
+            config: configPda,
             market: marketKey,
             orderbook: orderbookPda,
             bidEscrow: bidEscrowPda,
             userUsdc,
             userYes,
             escrowYes: escrowYesPda,
-          })
+          } as any)
           .instruction();
         tx.add(placeIx);
 
@@ -220,6 +223,7 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
           .mergePair(quantityBn)
           .accounts({
             user: publicKey,
+            config: configPda,
             market: marketKey,
             yesMint: market.yesMint,
             noMint: market.noMint,
@@ -227,7 +231,7 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
             userUsdc,
             userYes,
             userNo,
-          })
+          } as any)
           .instruction();
         tx.add(mergeIx);
       } else {
@@ -235,13 +239,14 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
           .placeOrder(yesSideIsBid, yesOrderPrice, quantityBn)
           .accounts({
             user: publicKey,
+            config: configPda,
             market: marketKey,
             orderbook: orderbookPda,
             bidEscrow: bidEscrowPda,
             userUsdc,
             userYes,
             escrowYes: escrowYesPda,
-          })
+          } as any)
           .instruction();
         tx.add(placeIx);
       }

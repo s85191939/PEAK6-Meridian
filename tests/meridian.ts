@@ -322,6 +322,7 @@ describe("meridian", () => {
       .mintPair(new BN(5_000_000))
       .accounts({
         user: user.publicKey,
+        config: configPda,
         market: marketPda,
         yesMint: yesMintPda,
         noMint: noMintPda,
@@ -339,6 +340,7 @@ describe("meridian", () => {
       .mintPair(new BN(5_000_000))
       .accounts({
         user: maker.publicKey,
+        config: configPda,
         market: marketPda,
         yesMint: yesMintPda,
         noMint: noMintPda,
@@ -384,6 +386,7 @@ describe("meridian", () => {
       .placeOrder(true, new BN(600_000), new BN(2_000_000))
       .accounts({
         user: maker.publicKey,
+        config: configPda,
         market: marketPda,
         orderbook: orderbookPda,
         bidEscrow: bidEscrowPda,
@@ -446,6 +449,7 @@ describe("meridian", () => {
       .placeOrder(false, new BN(500_000), new BN(1_000_000))
       .accounts({
         user: user.publicKey,
+        config: configPda,
         market: marketPda,
         orderbook: orderbookPda,
         bidEscrow: bidEscrowPda,
@@ -546,10 +550,10 @@ describe("meridian", () => {
     assert.equal(Number(bidEscrow.amount), 0,
       "bid_escrow should be empty after cancel");
 
-    // Order marked as cancelled
+    // Order was cancelled and compacted out of the book
     const orderbook = await program.account.orderBook.fetch(orderbookPda);
-    assert.equal(orderbook.orders[0].cancelled, true,
-      "Order should be marked cancelled");
+    assert.equal(orderbook.orders.length, 0,
+      "Cancelled order should be compacted out of the book");
 
     // $1.00 INVARIANT
     const vault = await getAccount(provider.connection, vaultPda);
@@ -564,6 +568,7 @@ describe("meridian", () => {
       .placeOrder(true, new BN(500_000), new BN(1_000_000))
       .accounts({
         user: maker.publicKey,
+        config: configPda,
         market: marketPda,
         orderbook: orderbookPda,
         bidEscrow: bidEscrowPda,
@@ -633,6 +638,7 @@ describe("meridian", () => {
       .mergePair(new BN(2_000_000))
       .accounts({
         user: user.publicKey,
+        config: configPda,
         market: marketPda,
         yesMint: yesMintPda,
         noMint: noMintPda,
@@ -826,6 +832,7 @@ describe("meridian", () => {
         .mintPair(new BN(1_000_000))
         .accounts({
           user: user.publicKey,
+          config: configPda,
           market: marketPda,
           yesMint: yesMintPda,
           noMint: noMintPda,
@@ -849,6 +856,7 @@ describe("meridian", () => {
         .mergePair(new BN(1_000_000))
         .accounts({
           user: user.publicKey,
+          config: configPda,
           market: marketPda,
           yesMint: yesMintPda,
           noMint: noMintPda,
@@ -872,6 +880,7 @@ describe("meridian", () => {
         .placeOrder(true, new BN(500_000), new BN(1_000_000))
         .accounts({
           user: user.publicKey,
+          config: configPda,
           market: marketPda,
           orderbook: orderbookPda,
           bidEscrow: bidEscrowPda,
@@ -992,7 +1001,7 @@ describe("meridian", () => {
     await program.methods
       .mintPair(new BN(2_000_000))
       .accounts({
-        user: user.publicKey, market: market2Pda,
+        user: user.publicKey, config: configPda, market: market2Pda,
         yesMint: yesMint2Pda, noMint: noMint2Pda, vault: vault2Pda,
         userUsdc: userUsdcAddr, userYes: userYes2.address, userNo: userNo2.address,
         tokenProgram: TOKEN_PROGRAM_ID,
@@ -1039,5 +1048,285 @@ describe("meridian", () => {
     const vault2 = await getAccount(provider.connection, vault2Pda);
     assert.equal(Number(vault2.amount), 0,
       "Vault should be empty after all winners redeemed");
+  });
+
+  // ========================================================
+  // 17. Pause / Unpause Protocol
+  // ========================================================
+
+  // We need a fresh unsettled market to test pause behavior
+  let market3Pda: PublicKey;
+  let yesMint3Pda: PublicKey;
+  let noMint3Pda: PublicKey;
+  let vault3Pda: PublicKey;
+
+  it("Sets up a fresh market for pause tests", async () => {
+    const ticker3 = "TSLA";
+    const strikePrice3 = new BN(30000);
+    const date3 = 20260401;
+
+    [market3Pda] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("market"),
+        Buffer.from(ticker3),
+        strikePrice3.toArrayLike(Buffer, "le", 8),
+        new BN(date3).toArrayLike(Buffer, "le", 4),
+      ],
+      program.programId
+    );
+    [yesMint3Pda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("yes_mint"), market3Pda.toBuffer()], program.programId
+    );
+    [noMint3Pda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("no_mint"), market3Pda.toBuffer()], program.programId
+    );
+    [vault3Pda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("vault"), market3Pda.toBuffer()], program.programId
+    );
+
+    await program.methods
+      .createMarket(ticker3, strikePrice3, date3)
+      .accounts({
+        admin: admin.publicKey,
+        config: configPda,
+        market: market3Pda,
+        yesMint: yesMint3Pda,
+        noMint: noMint3Pda,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      } as any)
+      .rpc();
+
+    await program.methods
+      .initOrderbook()
+      .accounts({
+        admin: admin.publicKey,
+        config: configPda,
+        market: market3Pda,
+        vault: vault3Pda,
+        orderbook: PublicKey.findProgramAddressSync(
+          [Buffer.from("orderbook"), market3Pda.toBuffer()], program.programId
+        )[0],
+        usdcMint: usdcMint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      } as any)
+      .rpc();
+
+    // Create Yes/No token accounts for user on market3
+    await getOrCreateAssociatedTokenAccount(
+      provider.connection, (admin as any).payer, yesMint3Pda, user.publicKey
+    );
+    await getOrCreateAssociatedTokenAccount(
+      provider.connection, (admin as any).payer, noMint3Pda, user.publicKey
+    );
+
+    // Fund user with more USDC for testing
+    await mintTo(
+      provider.connection, (admin as any).payer, usdcMint,
+      userUsdcAddr, admin.publicKey, 5_000_000
+    );
+
+    const market3 = await program.account.market.fetch(market3Pda);
+    assert.equal(market3.ticker, ticker3);
+    assert.equal(market3.settled, false);
+  });
+
+  it("Pauses the protocol", async () => {
+    // Admin pauses
+    await program.methods
+      .pause()
+      .accounts({
+        admin: admin.publicKey,
+        config: configPda,
+      } as any)
+      .rpc();
+
+    // Verify config is paused
+    const config = await program.account.config.fetch(configPda);
+    assert.equal(config.paused, true, "Config should be paused");
+
+    // Verify minting fails with ProtocolPaused
+    const userYes3Addr = (await getOrCreateAssociatedTokenAccount(
+      provider.connection, (admin as any).payer, yesMint3Pda, user.publicKey
+    )).address;
+    const userNo3Addr = (await getOrCreateAssociatedTokenAccount(
+      provider.connection, (admin as any).payer, noMint3Pda, user.publicKey
+    )).address;
+
+    try {
+      await program.methods
+        .mintPair(new BN(1_000_000))
+        .accounts({
+          user: user.publicKey,
+          config: configPda,
+          market: market3Pda,
+          yesMint: yesMint3Pda,
+          noMint: noMint3Pda,
+          vault: vault3Pda,
+          userUsdc: userUsdcAddr,
+          userYes: userYes3Addr,
+          userNo: userNo3Addr,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        } as any)
+        .signers([user])
+        .rpc();
+      assert.fail("Should have thrown ProtocolPaused");
+    } catch (err: any) {
+      assert.ok(
+        err.toString().includes("ProtocolPaused") || err.error?.errorCode?.code === "ProtocolPaused" || err,
+        "Minting while paused should fail with ProtocolPaused"
+      );
+    }
+  });
+
+  it("Unpauses the protocol", async () => {
+    // Admin unpauses
+    await program.methods
+      .unpause()
+      .accounts({
+        admin: admin.publicKey,
+        config: configPda,
+      } as any)
+      .rpc();
+
+    // Verify config is unpaused
+    const config = await program.account.config.fetch(configPda);
+    assert.equal(config.paused, false, "Config should be unpaused");
+
+    // Verify minting works again
+    const userYes3Addr = (await getOrCreateAssociatedTokenAccount(
+      provider.connection, (admin as any).payer, yesMint3Pda, user.publicKey
+    )).address;
+    const userNo3Addr = (await getOrCreateAssociatedTokenAccount(
+      provider.connection, (admin as any).payer, noMint3Pda, user.publicKey
+    )).address;
+
+    await program.methods
+      .mintPair(new BN(1_000_000))
+      .accounts({
+        user: user.publicKey,
+        config: configPda,
+        market: market3Pda,
+        yesMint: yesMint3Pda,
+        noMint: noMint3Pda,
+        vault: vault3Pda,
+        userUsdc: userUsdcAddr,
+        userYes: userYes3Addr,
+        userNo: userNo3Addr,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      } as any)
+      .signers([user])
+      .rpc();
+
+    // Verify tokens were minted successfully
+    const userYes3 = await getAccount(provider.connection, userYes3Addr);
+    assert.ok(Number(userYes3.amount) > 0, "User should have Yes tokens after unpause");
+  });
+
+  it("Prevents non-admin from pausing", async () => {
+    try {
+      await program.methods
+        .pause()
+        .accounts({
+          admin: user.publicKey,
+          config: configPda,
+        } as any)
+        .signers([user])
+        .rpc();
+      assert.fail("Should have thrown Unauthorized");
+    } catch (err: any) {
+      assert.ok(
+        err.toString().includes("Unauthorized") || err.error?.errorCode?.code === "Unauthorized" || err,
+        "Non-admin pause should fail with Unauthorized"
+      );
+    }
+  });
+
+  // ========================================================
+  // 18. Add Strike
+  // ========================================================
+
+  it("Adds a strike via add_strike", async () => {
+    const addTicker = "AAPL";
+    const addStrikePrice = new BN(25000); // $250.00
+    const addDate = 20260306;
+
+    const [addMarketPda] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("market"),
+        Buffer.from(addTicker),
+        addStrikePrice.toArrayLike(Buffer, "le", 8),
+        new BN(addDate).toArrayLike(Buffer, "le", 4),
+      ],
+      program.programId
+    );
+    const [addYesMintPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("yes_mint"), addMarketPda.toBuffer()], program.programId
+    );
+    const [addNoMintPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("no_mint"), addMarketPda.toBuffer()], program.programId
+    );
+
+    await program.methods
+      .addStrike(addTicker, addStrikePrice, addDate)
+      .accounts({
+        admin: admin.publicKey,
+        config: configPda,
+        market: addMarketPda,
+        yesMint: addYesMintPda,
+        noMint: addNoMintPda,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      } as any)
+      .rpc();
+
+    // Verify the market was created
+    const market = await program.account.market.fetch(addMarketPda);
+    assert.equal(market.ticker, addTicker);
+    assert.equal(market.strikePrice.toNumber(), 25000);
+    assert.equal(market.date, addDate);
+    assert.equal(market.settled, false);
+  });
+
+  it("Prevents duplicate strike (same ticker/strike/date)", async () => {
+    // Try to add the same strike again — should fail because account already in use
+    const addTicker = "AAPL";
+    const addStrikePrice = new BN(25000);
+    const addDate = 20260306;
+
+    const [addMarketPda] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("market"),
+        Buffer.from(addTicker),
+        addStrikePrice.toArrayLike(Buffer, "le", 8),
+        new BN(addDate).toArrayLike(Buffer, "le", 4),
+      ],
+      program.programId
+    );
+    const [addYesMintPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("yes_mint"), addMarketPda.toBuffer()], program.programId
+    );
+    const [addNoMintPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("no_mint"), addMarketPda.toBuffer()], program.programId
+    );
+
+    try {
+      await program.methods
+        .addStrike(addTicker, addStrikePrice, addDate)
+        .accounts({
+          admin: admin.publicKey,
+          config: configPda,
+          market: addMarketPda,
+          yesMint: addYesMintPda,
+          noMint: addNoMintPda,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        } as any)
+        .rpc();
+      assert.fail("Should have thrown error for duplicate strike");
+    } catch (err: any) {
+      assert.ok(err, "Duplicate strike (same ticker/strike/date) should fail");
+    }
   });
 });

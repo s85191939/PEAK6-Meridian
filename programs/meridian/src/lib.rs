@@ -32,6 +32,16 @@ pub mod meridian {
         instructions::create_market::handler(ctx, ticker, strike_price, date)
     }
 
+    /// Add an extra strike intraday for a stock (admin only)
+    pub fn add_strike(
+        ctx: Context<AddStrike>,
+        ticker: String,
+        strike_price: u64,
+        date: u32,
+    ) -> Result<()> {
+        instructions::add_strike::handler(ctx, ticker, strike_price, date)
+    }
+
     /// Register a market in the on-chain registry (admin only, after create_market)
     pub fn register_market(ctx: Context<RegisterMarket>) -> Result<()> {
         instructions::register_market::handler(ctx)
@@ -86,5 +96,15 @@ pub mod meridian {
     /// Redeem winning tokens for USDC after settlement
     pub fn redeem(ctx: Context<Redeem>, amount: u64) -> Result<()> {
         instructions::redeem::handler(ctx, amount)
+    }
+
+    /// Pause the protocol — blocks minting, trading, merging (admin only)
+    pub fn pause(ctx: Context<SetPause>) -> Result<()> {
+        instructions::pause::handler_pause(ctx)
+    }
+
+    /// Unpause the protocol (admin only)
+    pub fn unpause(ctx: Context<SetPause>) -> Result<()> {
+        instructions::pause::handler_unpause(ctx)
     }
 }

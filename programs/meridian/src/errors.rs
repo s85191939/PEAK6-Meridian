@@ -58,4 +58,7 @@ pub enum MeridianError {
 
     #[msg("Market registry is full")]
     RegistryFull,
+
+    #[msg("Protocol is paused — minting, trading, and merging are disabled")]
+    ProtocolPaused,
 }

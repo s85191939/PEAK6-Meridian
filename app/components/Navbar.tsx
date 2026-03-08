@@ -15,8 +15,9 @@ export default function Navbar() {
   const pathname = usePathname();
 
   const navLinks = [
-    { href: "/", label: "Markets" },
+    { href: "/markets", label: "Markets" },
     { href: "/portfolio", label: "Portfolio" },
+    { href: "/history", label: "History" },
   ];
 
   return (
@@ -57,8 +58,8 @@ export default function Navbar() {
         <div className="flex items-center gap-1">
           {navLinks.map((link) => {
             const isActive =
-              link.href === "/"
-                ? pathname === "/" || pathname.startsWith("/trade")
+              link.href === "/markets"
+                ? pathname === "/markets" || pathname.startsWith("/trade")
                 : pathname.startsWith(link.href);
 
             return (

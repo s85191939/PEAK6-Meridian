@@ -8,6 +8,7 @@ pub fn handler(ctx: Context<Initialize>, usdc_mint: Pubkey) -> Result<()> {
     config.admin = ctx.accounts.admin.key();
     config.usdc_mint = usdc_mint;
     config.market_count = 0;
+    config.paused = false;
     config.bump = ctx.bumps.config;
     msg!("Meridian config initialized. Admin: {}", config.admin);
     Ok(())

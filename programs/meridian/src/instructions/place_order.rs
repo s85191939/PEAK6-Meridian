@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
-use crate::state::{Market, OrderBook, Order, MAX_ORDERS};
+use crate::state::{Config, Market, OrderBook, Order, MAX_ORDERS};
 use crate::errors::MeridianError;
 
 /// Place a limit order with match-at-place.
@@ -24,6 +24,7 @@ pub fn handler<'info>(
     price: u64,
     quantity: u64,
 ) -> Result<()> {
+    require!(!ctx.accounts.config.paused, MeridianError::ProtocolPaused);
     let market = &ctx.accounts.market;
     require!(!market.settled, MeridianError::MarketAlreadySettled);
     require!(price >= 10_000 && price <= 990_000, MeridianError::InvalidOrderPrice);
@@ -281,6 +282,9 @@ pub fn handler<'info>(
 pub struct PlaceOrder<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
+
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Account<'info, Config>,
 
     #[account(
         seeds = [b"market", market.ticker.as_bytes(), &market.strike_price.to_le_bytes(), &market.date.to_le_bytes()],

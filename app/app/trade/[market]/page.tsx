@@ -131,7 +131,7 @@ export default function TradePage({
               Retry
             </button>
             <Link
-              href="/"
+              href="/markets"
               className="rounded-xl bg-yellow-500 px-4 py-2 text-sm font-bold text-black hover:bg-yellow-400 transition-colors"
             >
               Back to Markets
@@ -166,7 +166,7 @@ export default function TradePage({
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       {/* Breadcrumb */}
       <div className="mb-6 flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/" className="hover:text-gray-300 transition-colors">
+        <Link href="/markets" className="hover:text-gray-300 transition-colors">
           Markets
         </Link>
         <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

@@ -44,6 +44,20 @@ async function main() {
   // ──────────────────────────────────────────
   console.log("📋 Step 0: Setting up mock USDC and user...");
 
+  // Fund admin wallet on devnet (no-op if already funded)
+  const adminBalance = await provider.connection.getBalance(admin.publicKey);
+  if (adminBalance < 2 * anchor.web3.LAMPORTS_PER_SOL) {
+    console.log("   Airdropping SOL to admin wallet...");
+    const airdropAdmin = await provider.connection.requestAirdrop(
+      admin.publicKey,
+      5 * anchor.web3.LAMPORTS_PER_SOL
+    );
+    await provider.connection.confirmTransaction(airdropAdmin);
+    console.log(`   Admin funded: ${admin.publicKey.toBase58()}`);
+  } else {
+    console.log(`   Admin already funded (${(adminBalance / anchor.web3.LAMPORTS_PER_SOL).toFixed(2)} SOL)`);
+  }
+
   const usdcMint = await createMint(
     provider.connection,
     (admin as any).payer,
@@ -256,6 +270,7 @@ async function main() {
     .mintPair(new BN(5_000_000))
     .accounts({
       user: user.publicKey,
+      config: configPda,
       market: marketPda,
       yesMint: yesMintPda,
       noMint: noMintPda,
@@ -284,6 +299,7 @@ async function main() {
     .mergePair(new BN(2_000_000))
     .accounts({
       user: user.publicKey,
+      config: configPda,
       market: marketPda,
       yesMint: yesMintPda,
       noMint: noMintPda,

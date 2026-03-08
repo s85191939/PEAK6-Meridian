@@ -7,6 +7,8 @@ pub struct Config {
     pub admin: Pubkey,
     pub usdc_mint: Pubkey,
     pub market_count: u64,
+    /// Emergency pause — blocks minting, trading, and merging when true
+    pub paused: bool,
     pub bump: u8,
 }
 

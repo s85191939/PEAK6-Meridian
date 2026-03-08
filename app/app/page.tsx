@@ -1,244 +1,183 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
-import { useConnection } from "@solana/wallet-adapter-react";
-import { PublicKey } from "@solana/web3.js";
-import { Program, AnchorProvider, BN } from "@coral-xyz/anchor";
-import MarketCard, { MarketData } from "@/components/MarketCard";
-import {
-  findMarketRegistryPda,
-  findOrderbookPda,
-} from "@/lib/utils";
-import type { Meridian } from "../../target/types/meridian";
-import idl from "../../target/idl/meridian.json";
+import React from "react";
+import Link from "next/link";
+import dynamic from "next/dynamic";
 
-export default function MarketsPage() {
-  const { connection } = useConnection();
-  const [markets, setMarkets] = useState<MarketData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | "active" | "settled">("all");
+const WalletMultiButton = dynamic(
+  async () =>
+    (await import("@solana/wallet-adapter-react-ui")).WalletMultiButton,
+  { ssr: false }
+);
 
-  const fetchMarkets = useCallback(async () => {
-    try {
-      setError(null);
-      const provider = new AnchorProvider(
-        connection,
-        {
-          publicKey: PublicKey.default,
-          signTransaction: async (tx) => tx,
-          signAllTransactions: async (txs) => txs,
-        },
-        { commitment: "confirmed" }
-      );
-      const program = new Program<Meridian>(idl as Meridian, provider);
+const MAG7 = [
+  { ticker: "AAPL", name: "Apple", color: "text-gray-300" },
+  { ticker: "MSFT", name: "Microsoft", color: "text-blue-400" },
+  { ticker: "GOOGL", name: "Alphabet", color: "text-red-400" },
+  { ticker: "AMZN", name: "Amazon", color: "text-orange-400" },
+  { ticker: "NVDA", name: "NVIDIA", color: "text-green-400" },
+  { ticker: "META", name: "Meta", color: "text-blue-300" },
+  { ticker: "TSLA", name: "Tesla", color: "text-red-300" },
+];
 
-      // Fetch market registry
-      const [registryPda] = findMarketRegistryPda();
-      let registryAccount;
-      try {
-        registryAccount = await program.account.marketRegistry.fetch(registryPda);
-      } catch {
-        setMarkets([]);
-        setLoading(false);
-        return;
-      }
-
-      const marketPubkeys = registryAccount.markets as PublicKey[];
-
-      // Fetch all markets in parallel
-      const marketResults = await Promise.allSettled(
-        marketPubkeys.map((pda) => program.account.market.fetch(pda))
-      );
-
-      // Fetch all orderbooks in parallel
-      const orderbookResults = await Promise.allSettled(
-        marketPubkeys.map((pda) => {
-          const [orderbookPda] = findOrderbookPda(pda);
-          return program.account.orderBook.fetch(orderbookPda);
-        })
-      );
-
-      const marketsList: MarketData[] = [];
-
-      for (let i = 0; i < marketPubkeys.length; i++) {
-        const marketResult = marketResults[i];
-        if (marketResult.status !== "fulfilled") continue;
-
-        const market = marketResult.value;
-        let bestBid: BN | null = null;
-        let bestAsk: BN | null = null;
-
-        const orderbookResult = orderbookResults[i];
-        if (orderbookResult.status === "fulfilled") {
-          interface OrderData {
-            isBid: boolean;
-            cancelled: boolean;
-            quantity: BN;
-            filled: BN;
-            price: BN;
-          }
-
-          const activeOrders = (orderbookResult.value.orders as OrderData[]).filter(
-            (o: OrderData) =>
-              !o.cancelled && (o.quantity as BN).sub(o.filled as BN).gt(new BN(0))
-          );
-
-          const bidOrders = activeOrders.filter((o: OrderData) => o.isBid);
-          const askOrders = activeOrders.filter((o: OrderData) => !o.isBid);
-
-          if (bidOrders.length > 0) {
-            bestBid = bidOrders.reduce(
-              (max: BN, o: OrderData) =>
-                (o.price as BN).gt(max) ? (o.price as BN) : max,
-              new BN(0)
-            );
-          }
-          if (askOrders.length > 0) {
-            bestAsk = askOrders.reduce(
-              (min: BN, o: OrderData) =>
-                (o.price as BN).lt(min) ? (o.price as BN) : min,
-              new BN(10).pow(new BN(12))
-            );
-          }
-        }
-
-        marketsList.push({
-          publicKey: marketPubkeys[i],
-          marketId: market.marketId as BN,
-          ticker: market.ticker as string,
-          strikePrice: market.strikePrice as BN,
-          date: market.date as number,
-          yesMint: market.yesMint as PublicKey,
-          noMint: market.noMint as PublicKey,
-          settled: market.settled as boolean,
-          outcomeYesWins: market.outcomeYesWins as boolean,
-          settlementPrice: market.settlementPrice as BN,
-          totalPairsMinted: market.totalPairsMinted as BN,
-          bestBid,
-          bestAsk,
-        });
-      }
-
-      setMarkets(marketsList);
-    } catch (err) {
-      console.error("Failed to fetch markets:", err);
-      setError(
-        "Failed to load markets. Connect your wallet and ensure you're on Solana Devnet."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [connection]);
-
-  useEffect(() => {
-    fetchMarkets();
-    const interval = setInterval(fetchMarkets, 15000);
-    return () => clearInterval(interval);
-  }, [fetchMarkets]);
-
-  const filteredMarkets = markets.filter((m) => {
-    if (filter === "active") return !m.settled;
-    if (filter === "settled") return m.settled;
-    return true;
-  });
-
+export default function LandingPage() {
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white">Markets</h1>
-        <p className="mt-2 text-sm text-gray-500">
-          Trade binary outcomes on MAG7 stocks. Predict whether a stock closes
-          above or below a strike price. 0DTE contracts settle at 4:00 PM ET.
+    <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6">
+      {/* Hero */}
+      <div className="text-center">
+        <h1 className="text-5xl font-extrabold tracking-tight text-white sm:text-6xl">
+          Trade Binary Outcomes
+          <br />
+          <span className="bg-gradient-to-r from-yellow-400 to-amber-500 bg-clip-text text-transparent">
+            on MAG7 Stocks
+          </span>
+        </h1>
+        <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-gray-400">
+          Predict whether a stock closes above or below a strike price today.
+          Yes tokens pay $1 if you&apos;re right, $0 if you&apos;re wrong.
+          Zero-day contracts settle at 4:00 PM ET using on-chain price data.
         </p>
-      </div>
-
-      {/* Filters */}
-      <div className="mb-6 flex items-center gap-2">
-        {(["all", "active", "settled"] as const).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`rounded-xl px-4 py-2 text-sm font-medium capitalize transition-all duration-200 ${
-              filter === f
-                ? "bg-gray-800/80 text-white shadow-sm"
-                : "text-gray-500 hover:bg-gray-800/40 hover:text-gray-300"
-            }`}
+        <div className="mt-8 flex items-center justify-center gap-4">
+          <Link
+            href="/markets"
+            className="rounded-xl bg-gradient-to-r from-yellow-500 to-amber-500 px-8 py-3 text-sm font-bold text-black shadow-lg shadow-yellow-500/20 transition-all hover:shadow-yellow-500/40"
           >
-            {f}
-          </button>
-        ))}
-        <div className="ml-auto font-mono text-sm text-gray-600">
-          {filteredMarkets.length} market{filteredMarkets.length !== 1 && "s"}
+            Browse Markets
+          </Link>
+          <div className="wallet-adapter-button-wrapper">
+            <WalletMultiButton />
+          </div>
         </div>
       </div>
 
-      {/* Error state */}
-      {error && (
-        <div className="mb-6 flex items-center justify-between rounded-2xl border border-red-500/20 bg-red-500/8 px-5 py-4">
-          <div className="flex items-start gap-3">
-            <svg className="mt-0.5 h-5 w-5 shrink-0 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-            </svg>
-            <div>
-              <p className="text-sm font-semibold text-red-400">Connection Error</p>
-              <p className="mt-0.5 text-xs text-red-400/80">{error}</p>
-            </div>
-          </div>
-          <button
-            onClick={() => {
-              setLoading(true);
-              setError(null);
-              fetchMarkets();
-            }}
-            className="shrink-0 rounded-xl bg-red-500/20 px-4 py-2 text-sm font-bold text-red-400 hover:bg-red-500/30 transition-colors"
-          >
-            Retry
-          </button>
-        </div>
-      )}
-
-      {/* Market Grid */}
-      {loading ? (
-        <div className="flex h-64 items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-yellow-500 border-t-transparent" />
-            <span className="text-sm text-gray-400">Loading markets...</span>
-          </div>
-        </div>
-      ) : !error && filteredMarkets.length === 0 ? (
-        <div className="flex h-64 flex-col items-center justify-center rounded-2xl border border-gray-800/60 bg-gray-900/50">
-          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-800/50">
-            <svg
-              className="h-7 w-7 text-gray-500"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
+      {/* How It Works */}
+      <div className="mt-20">
+        <h2 className="text-center text-2xl font-bold text-white">
+          How It Works
+        </h2>
+        <div className="mt-8 grid gap-6 sm:grid-cols-3">
+          {[
+            {
+              step: "1",
+              title: "Pick a Market",
+              desc: 'Choose from 7 MAG7 stocks with multiple strike prices. Example: "Will AAPL close above $230?"',
+            },
+            {
+              step: "2",
+              title: "Buy Yes or No",
+              desc: "Yes tokens pay $1.00 if the stock closes at or above the strike. No tokens pay $1.00 if it closes below.",
+            },
+            {
+              step: "3",
+              title: "Settle & Redeem",
+              desc: "At 4:00 PM ET, markets settle automatically. Winning tokens pay $1.00 USDC. Losers pay $0.",
+            },
+          ].map((item) => (
+            <div
+              key={item.step}
+              className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-6"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-              />
-            </svg>
-          </div>
-          <p className="text-sm font-medium text-gray-400">
-            {markets.length === 0
-              ? "No markets found. Markets will appear here once created on-chain."
-              : "No markets match the current filter."}
-          </p>
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredMarkets.map((market, i) => (
-            <div key={market.publicKey.toBase58()} className={`animate-fade-in stagger-${Math.min(i + 1, 7)}`}>
-              <MarketCard market={market} />
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-yellow-500/15 text-sm font-bold text-yellow-400 ring-1 ring-inset ring-yellow-500/25">
+                {item.step}
+              </div>
+              <h3 className="mt-4 text-lg font-semibold text-white">
+                {item.title}
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-gray-500">
+                {item.desc}
+              </p>
             </div>
           ))}
         </div>
-      )}
+      </div>
+
+      {/* $1.00 Invariant */}
+      <div className="mt-16 rounded-2xl border border-yellow-500/20 bg-yellow-500/5 p-8 text-center">
+        <p className="text-lg font-bold text-yellow-400">
+          The $1.00 Invariant
+        </p>
+        <p className="mt-2 text-sm text-gray-400">
+          Yes payout + No payout = $1.00 USDC. Always. For every contract.
+          Enforced on-chain at every transaction.
+        </p>
+        <div className="mt-4 flex items-center justify-center gap-8 font-mono text-sm">
+          <span className="text-green-400">
+            Yes @ $0.65 →{" "}
+            <span className="text-white">win $1.00</span>
+          </span>
+          <span className="text-gray-600">|</span>
+          <span className="text-red-400">
+            No @ $0.35 →{" "}
+            <span className="text-white">win $1.00</span>
+          </span>
+        </div>
+      </div>
+
+      {/* Supported Assets */}
+      <div className="mt-16">
+        <h2 className="text-center text-2xl font-bold text-white">
+          Supported Assets
+        </h2>
+        <p className="mt-2 text-center text-sm text-gray-500">
+          The Magnificent 7 — the most liquid US equities
+        </p>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          {MAG7.map((s) => (
+            <div
+              key={s.ticker}
+              className="rounded-xl border border-gray-800/60 bg-gray-900/50 px-5 py-3 text-center"
+            >
+              <span className={`text-lg font-bold ${s.color}`}>
+                {s.ticker}
+              </span>
+              <p className="text-xs text-gray-600">{s.name}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Key Features */}
+      <div className="mt-16 grid gap-4 sm:grid-cols-2">
+        {[
+          {
+            title: "Non-Custodial",
+            desc: "Your tokens stay in your wallet. No KYC, no intermediaries.",
+          },
+          {
+            title: "On-Chain Order Book",
+            desc: "Limit orders matched on Solana with sub-second finality.",
+          },
+          {
+            title: "0DTE Contracts",
+            desc: "Zero days to expiry — markets created each morning, settled at close.",
+          },
+          {
+            title: "4 Trade Paths",
+            desc: "Buy Yes, Buy No, Sell Yes, Sell No — all on a single order book.",
+          },
+        ].map((f) => (
+          <div
+            key={f.title}
+            className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-5"
+          >
+            <h3 className="text-sm font-semibold text-white">{f.title}</h3>
+            <p className="mt-1 text-xs text-gray-500">{f.desc}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* CTA */}
+      <div className="mt-16 text-center">
+        <Link
+          href="/markets"
+          className="inline-block rounded-xl bg-gradient-to-r from-yellow-500 to-amber-500 px-10 py-4 text-base font-bold text-black shadow-lg shadow-yellow-500/20 transition-all hover:shadow-yellow-500/40"
+        >
+          Start Trading →
+        </Link>
+        <p className="mt-4 text-xs text-gray-600">
+          Solana Devnet · No real funds · Not financial advice
+        </p>
+      </div>
     </div>
   );
 }

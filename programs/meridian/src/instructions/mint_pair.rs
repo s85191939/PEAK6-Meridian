@@ -1,12 +1,13 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, MintTo, Token, TokenAccount, Transfer};
-use crate::state::Market;
+use crate::state::{Config, Market};
 use crate::errors::MeridianError;
 
 /// Mint a Yes/No pair by depositing 1 USDC (1_000_000 micro-units).
 /// The user receives 1 Yes token + 1 No token. USDC goes to the vault.
 /// This is the ONLY way to create outcome tokens — enforcing the $1.00 invariant.
 pub fn handler(ctx: Context<MintPair>, amount: u64) -> Result<()> {
+    require!(!ctx.accounts.config.paused, MeridianError::ProtocolPaused);
     let market = &ctx.accounts.market;
     require!(!market.settled, MeridianError::MarketAlreadySettled);
     require!(amount > 0, MeridianError::InvalidOrderQuantity);
@@ -88,6 +89,9 @@ pub fn handler(ctx: Context<MintPair>, amount: u64) -> Result<()> {
 pub struct MintPair<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
+
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Account<'info, Config>,
 
     #[account(
         mut,

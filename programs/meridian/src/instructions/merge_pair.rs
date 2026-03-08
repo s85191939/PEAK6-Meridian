@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Burn, Mint, Token, TokenAccount, Transfer};
-use crate::state::Market;
+use crate::state::{Config, Market};
 use crate::errors::MeridianError;
 
 /// Merge (close) a Yes/No pair pre-settlement → return 1 USDC per pair.
@@ -17,6 +17,7 @@ use crate::errors::MeridianError;
 /// The $1.00 invariant is preserved: total_pairs_minted decreases by `amount`,
 /// and `amount` USDC leaves the vault.
 pub fn handler(ctx: Context<MergePair>, amount: u64) -> Result<()> {
+    require!(!ctx.accounts.config.paused, MeridianError::ProtocolPaused);
     let market = &ctx.accounts.market;
     require!(!market.settled, MeridianError::MarketAlreadySettled);
     require!(amount > 0, MeridianError::InvalidOrderQuantity);
@@ -94,6 +95,9 @@ pub fn handler(ctx: Context<MergePair>, amount: u64) -> Result<()> {
 pub struct MergePair<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
+
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Account<'info, Config>,
 
     #[account(
         mut,

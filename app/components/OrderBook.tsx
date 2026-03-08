@@ -32,6 +32,8 @@ interface OrderBookProps {
   onPriceUpdate?: (bestBid: BN | null, bestAsk: BN | null) => void;
 }
 
+type Perspective = "yes" | "no";
+
 export default function OrderBook({ marketPubkey, onPriceUpdate }: OrderBookProps) {
   const { connection } = useConnection();
   const [bids, setBids] = useState<PriceLevel[]>([]);
@@ -39,6 +41,7 @@ export default function OrderBook({ marketPubkey, onPriceUpdate }: OrderBookProp
   const [spread, setSpread] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [perspective, setPerspective] = useState<Perspective>("yes");
 
   const fetchOrderbook = useCallback(async () => {
     try {
@@ -120,14 +123,39 @@ export default function OrderBook({ marketPubkey, onPriceUpdate }: OrderBookProp
     return () => clearInterval(interval);
   }, [fetchOrderbook]);
 
+  const ONE = Math.pow(10, PRICE_DECIMALS);
+  const divisor = ONE;
+  const qtyDivisor = Math.pow(10, 6);
+
+  // Transform data based on perspective
+  // Yes perspective: bids = buy Yes (green), asks = sell Yes (red) — native view
+  // No perspective: bids for No = asks for Yes at (1 - price), asks for No = bids for Yes at (1 - price)
+  const displayBids = perspective === "yes" ? bids : asks.map((a) => ({
+    ...a,
+    price: ONE - a.price,
+    priceBn: new BN(ONE - a.price),
+  })).sort((a, b) => b.price - a.price);
+
+  const displayAsks = perspective === "yes" ? asks : bids.map((b) => ({
+    ...b,
+    price: ONE - b.price,
+    priceBn: new BN(ONE - b.price),
+  })).sort((a, b) => a.price - b.price);
+
   const maxQuantity = Math.max(
-    ...bids.map((b) => b.totalQuantity),
-    ...asks.map((a) => a.totalQuantity),
+    ...displayBids.map((b) => b.totalQuantity),
+    ...displayAsks.map((a) => a.totalQuantity),
     1
   );
 
-  const divisor = Math.pow(10, PRICE_DECIMALS);
-  const qtyDivisor = Math.pow(10, 6);
+  // Spread for the current perspective
+  const displaySpread = (() => {
+    if (perspective === "yes") return spread;
+    const bestNoBid = displayBids.length > 0 ? displayBids[0] : null;
+    const bestNoAsk = displayAsks.length > 0 ? displayAsks[0] : null;
+    if (bestNoBid && bestNoAsk) return bestNoAsk.price - bestNoBid.price;
+    return null;
+  })();
 
   if (loading) {
     return (
@@ -161,7 +189,29 @@ export default function OrderBook({ marketPubkey, onPriceUpdate }: OrderBookProp
     <div className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-5">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-sm font-bold text-white">Order Book</h3>
-        <span className="text-[11px] font-medium text-gray-500">Yes / USDC</span>
+        {/* Perspective toggle */}
+        <div className="flex rounded-lg bg-gray-800/50 p-0.5">
+          <button
+            onClick={() => setPerspective("yes")}
+            className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all ${
+              perspective === "yes"
+                ? "bg-emerald-600 text-white shadow-sm"
+                : "text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            Yes
+          </button>
+          <button
+            onClick={() => setPerspective("no")}
+            className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all ${
+              perspective === "no"
+                ? "bg-red-600 text-white shadow-sm"
+                : "text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            No
+          </button>
+        </div>
       </div>
 
       {/* Header */}
@@ -173,12 +223,12 @@ export default function OrderBook({ marketPubkey, onPriceUpdate }: OrderBookProp
 
       {/* Asks (reversed so lowest ask is at bottom) */}
       <div className="space-y-px">
-        {asks.length === 0 ? (
+        {displayAsks.length === 0 ? (
           <div className="py-4 text-center text-xs text-gray-600">
             No asks
           </div>
         ) : (
-          [...asks].reverse().map((level) => (
+          [...displayAsks].reverse().map((level) => (
             <div key={`ask-${level.price}`} className="relative rounded-md">
               <div
                 className="absolute inset-y-0 right-0 rounded-md bg-red-500/8"
@@ -207,9 +257,9 @@ export default function OrderBook({ marketPubkey, onPriceUpdate }: OrderBookProp
         <span className="text-xs text-gray-500">
           Spread:{" "}
           <span className="font-mono font-semibold text-gray-300">
-            {spread !== null
-              ? `$${(spread / divisor).toFixed(2)} (${priceToPercent(
-                  new BN(spread)
+            {displaySpread !== null
+              ? `$${(displaySpread / divisor).toFixed(2)} (${priceToPercent(
+                  new BN(displaySpread)
                 )}%)`
               : "--"}
           </span>
@@ -218,12 +268,12 @@ export default function OrderBook({ marketPubkey, onPriceUpdate }: OrderBookProp
 
       {/* Bids */}
       <div className="space-y-px">
-        {bids.length === 0 ? (
+        {displayBids.length === 0 ? (
           <div className="py-4 text-center text-xs text-gray-600">
             No bids
           </div>
         ) : (
-          bids.map((level) => (
+          displayBids.map((level) => (
             <div key={`bid-${level.price}`} className="relative rounded-md">
               <div
                 className="absolute inset-y-0 right-0 rounded-md bg-emerald-500/8"
