@@ -4,6 +4,7 @@ target/deploy
 target/debug
 target/release
 target/sbf-solana-solana
+target/sbpf-solana-solana
 **/*.rs.bk
 node_modules
 test-ledger
@@ -12,3 +13,5 @@ test-ledger
 *.pem
 app/.next
 app/out
+*.pdf
+target/.rustc_info.json
