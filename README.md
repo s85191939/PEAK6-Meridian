@@ -31,12 +31,21 @@ make frontend
 |---------|-------------|
 | `make install` | Install Anchor + frontend npm dependencies |
 | `make build` | Build the Solana program |
-| `make test` | Run all 23 integration tests |
+| `make test` | Run all 23 integration tests on local validator |
 | `make frontend` | Start Next.js dev server on port 3000 |
 | `make demo` | Run full lifecycle script (create → mint → trade → settle → redeem) |
 | `make deploy` | Deploy program to Solana devnet |
 | `make create-markets` | Create today's strike markets on devnet |
 | `make settle-markets` | Settle markets on devnet |
+
+### How It Runs
+
+There is no separate backend server. The **Solana program is the backend** — it runs on-chain and processes all transactions directly.
+
+- **`make test`** — Spins up a local Solana validator automatically, deploys the program, runs all 23 tests, then shuts down. This is the fastest way to verify everything works.
+- **`make frontend`** — Starts the Next.js UI on `localhost:3000`. It connects to Solana devnet by default (configurable in `app/lib/constants.ts`).
+- **`make demo`** — Runs `scripts/demo-lifecycle.ts` against the local validator: creates a market, mints pairs, places orders, settles, and redeems. One script, full lifecycle.
+- **`make deploy`** — Deploys the compiled program to Solana devnet so the frontend can interact with it live.
 
 ## Devnet Deployment
 
