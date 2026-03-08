@@ -52,4 +52,10 @@ pub enum MeridianError {
 
     #[msg("Arithmetic overflow")]
     MathOverflow,
+
+    #[msg("Invalid token mint — must be yes_mint or no_mint")]
+    InvalidTokenMint,
+
+    #[msg("Market registry is full")]
+    RegistryFull,
 }

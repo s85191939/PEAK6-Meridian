@@ -6,21 +6,20 @@ import { useConnection } from "@solana/wallet-adapter-react";
 import { PublicKey, Transaction } from "@solana/web3.js";
 import {
   getAssociatedTokenAddress,
-  createAssociatedTokenAccountInstruction,
 } from "@solana/spl-token";
 import { Program, AnchorProvider, BN } from "@coral-xyz/anchor";
 import { MarketData } from "./MarketCard";
 import {
+  findConfigPda,
   findOrderbookPda,
   findEscrowYesPda,
+  findBidEscrowPda,
   findVaultPda,
   percentToPrice,
   parseUsdc,
   formatPrice,
   noPrice as computeNoPrice,
-  priceToPercent,
 } from "@/lib/utils";
-import { PROGRAM_ID, TOKEN_PROGRAM_ID } from "@/lib/constants";
 import type { Meridian } from "../../target/types/meridian";
 import idl from "../../target/idl/meridian.json";
 
@@ -83,9 +82,15 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
       const [orderbookPda] = findOrderbookPda(marketKey);
       const [vaultPda] = findVaultPda(marketKey);
       const [escrowYesPda] = findEscrowYesPda(marketKey);
+      const [bidEscrowPda] = findBidEscrowPda(marketKey);
+
+      // Fetch config to get USDC mint
+      const [configPda] = findConfigPda();
+      const configAccount = await program.account.config.fetch(configPda);
+      const usdcMint = configAccount.usdcMint as PublicKey;
 
       const userUsdc = await getAssociatedTokenAddress(
-        market.noMint, // We use vault's mint which is USDC - need config
+        usdcMint,
         publicKey
       );
 
@@ -123,7 +128,7 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
             userUsdc,
             userYes,
             userNo,
-            tokenProgram: TOKEN_PROGRAM_ID,
+
           })
           .instruction();
         tx.add(mintIx);
@@ -135,11 +140,11 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
             user: publicKey,
             market: marketKey,
             orderbook: orderbookPda,
-            vault: vaultPda,
+            bidEscrow: bidEscrowPda,
             userUsdc,
             userYes,
             escrowYes: escrowYesPda,
-            tokenProgram: TOKEN_PROGRAM_ID,
+
           })
           .instruction();
         tx.add(placeIx);
@@ -152,11 +157,11 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
             user: publicKey,
             market: marketKey,
             orderbook: orderbookPda,
-            vault: vaultPda,
+            bidEscrow: bidEscrowPda,
             userUsdc,
             userYes,
             escrowYes: escrowYesPda,
-            tokenProgram: TOKEN_PROGRAM_ID,
+
           })
           .instruction();
         tx.add(placeIx);
@@ -173,7 +178,7 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
             userUsdc,
             userYes,
             userNo,
-            tokenProgram: TOKEN_PROGRAM_ID,
+
           })
           .instruction();
         tx.add(mergeIx);
@@ -185,11 +190,11 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
             user: publicKey,
             market: marketKey,
             orderbook: orderbookPda,
-            vault: vaultPda,
+            bidEscrow: bidEscrowPda,
             userUsdc,
             userYes,
             escrowYes: escrowYesPda,
-            tokenProgram: TOKEN_PROGRAM_ID,
+
           })
           .instruction();
         tx.add(placeIx);

@@ -28,7 +28,7 @@ pub struct Market {
     pub yes_mint: Pubkey,
     /// No token mint
     pub no_mint: Pubkey,
-    /// USDC vault
+    /// USDC vault (holds only mint_pair/merge_pair/redeem collateral)
     pub vault: Pubkey,
     /// Total pairs minted (for invariant checking)
     pub total_pairs_minted: u64,
@@ -42,6 +42,22 @@ pub struct Market {
     pub yes_mint_bump: u8,
     pub no_mint_bump: u8,
     pub vault_bump: u8,
+    /// Bump for escrow_yes PDA (holds Yes tokens locked by ask orders)
+    pub escrow_yes_bump: u8,
+    /// Bump for bid_escrow PDA (holds USDC locked by bid orders)
+    pub bid_escrow_bump: u8,
+}
+
+/// On-chain registry of all market pubkeys so the frontend can enumerate them.
+pub const MAX_MARKETS: usize = 100;
+
+#[account]
+#[derive(InitSpace)]
+pub struct MarketRegistry {
+    pub admin: Pubkey,
+    #[max_len(MAX_MARKETS)]
+    pub markets: Vec<Pubkey>,
+    pub bump: u8,
 }
 
 /// Simplified order book — stores up to MAX_ORDERS limit orders

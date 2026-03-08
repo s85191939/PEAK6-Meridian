@@ -55,6 +55,20 @@ export function findEscrowYesPda(marketPubkey: PublicKey): [PublicKey, number] {
   );
 }
 
+export function findBidEscrowPda(marketPubkey: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("bid_escrow"), marketPubkey.toBuffer()],
+    PROGRAM_ID
+  );
+}
+
+export function findMarketRegistryPda(): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("market_registry")],
+    PROGRAM_ID
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Price formatting
 // ---------------------------------------------------------------------------

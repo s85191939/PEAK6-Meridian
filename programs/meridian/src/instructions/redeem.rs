@@ -13,6 +13,11 @@ pub fn handler(ctx: Context<Redeem>, amount: u64) -> Result<()> {
     let market = &ctx.accounts.market;
     require!(market.settled, MeridianError::MarketNotSettled);
     require!(amount > 0, MeridianError::NoTokensToRedeem);
+    require!(
+        ctx.accounts.token_mint.key() == market.yes_mint
+            || ctx.accounts.token_mint.key() == market.no_mint,
+        MeridianError::InvalidTokenMint
+    );
 
     // Determine if the user is redeeming the winning token
     let is_redeeming_yes = ctx.accounts.token_mint.key() == market.yes_mint;

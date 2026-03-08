@@ -5,10 +5,8 @@ use crate::errors::MeridianError;
 
 /// Initialize the vault and order book for an existing market.
 /// Called after create_market to stay within Solana's 4KB stack limit.
-/// This two-step process (create_market → init_orderbook) is a trade-off:
-/// more transactions, but keeps each within the BPF stack frame limit.
+/// Escrow accounts (escrow_yes, bid_escrow) are created in init_escrows.
 pub fn handler(ctx: Context<InitOrderbook>) -> Result<()> {
-    // Set vault on the market
     let market = &mut ctx.accounts.market;
     market.vault = ctx.accounts.vault.key();
     market.vault_bump = ctx.bumps.vault;

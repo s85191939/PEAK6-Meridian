@@ -5,7 +5,8 @@ use crate::errors::MeridianError;
 
 /// Create a new strike market for a given stock, strike price, and date.
 /// This creates the Market PDA and Yes/No token mints.
-/// The vault and order book are created via init_market_accounts to stay within stack limits.
+/// The vault and order book are created via init_orderbook to stay within stack limits.
+/// The market is registered via register_market (separate instruction to avoid stack overflow).
 pub fn handler(
     ctx: Context<CreateMarket>,
     ticker: String,
@@ -27,7 +28,7 @@ pub fn handler(
     market.date = date;
     market.yes_mint = ctx.accounts.yes_mint.key();
     market.no_mint = ctx.accounts.no_mint.key();
-    market.vault = Pubkey::default(); // Set by init_market_accounts
+    market.vault = Pubkey::default(); // Set by init_orderbook
     market.total_pairs_minted = 0;
     market.settled = false;
     market.outcome_yes_wins = false;
@@ -35,7 +36,9 @@ pub fn handler(
     market.bump = ctx.bumps.market;
     market.yes_mint_bump = ctx.bumps.yes_mint;
     market.no_mint_bump = ctx.bumps.no_mint;
-    market.vault_bump = 0; // Set by init_market_accounts
+    market.vault_bump = 0; // Set by init_orderbook
+    market.escrow_yes_bump = 0; // Set by init_escrows
+    market.bid_escrow_bump = 0; // Set by init_escrows
 
     msg!(
         "Market created: {} > ${} on {} (id: {})",

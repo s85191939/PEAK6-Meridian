@@ -17,6 +17,11 @@ pub mod meridian {
         instructions::initialize::handler(ctx, usdc_mint)
     }
 
+    /// Initialize the on-chain market registry (admin only, called once)
+    pub fn init_registry(ctx: Context<InitRegistry>) -> Result<()> {
+        instructions::init_registry::handler(ctx)
+    }
+
     /// Create a new strike market (admin only)
     pub fn create_market(
         ctx: Context<CreateMarket>,
@@ -27,9 +32,24 @@ pub mod meridian {
         instructions::create_market::handler(ctx, ticker, strike_price, date)
     }
 
-    /// Initialize the order book for a market (called after create_market)
+    /// Register a market in the on-chain registry (admin only, after create_market)
+    pub fn register_market(ctx: Context<RegisterMarket>) -> Result<()> {
+        instructions::register_market::handler(ctx)
+    }
+
+    /// Initialize vault + order book for a market (after create_market)
     pub fn init_orderbook(ctx: Context<InitOrderbook>) -> Result<()> {
         instructions::init_orderbook::handler(ctx)
+    }
+
+    /// Initialize Yes token escrow for ask orders (after init_orderbook)
+    pub fn init_escrow_yes(ctx: Context<InitEscrowYes>) -> Result<()> {
+        instructions::init_escrows::handler_yes(ctx)
+    }
+
+    /// Initialize USDC escrow for bid orders (after init_orderbook)
+    pub fn init_bid_escrow(ctx: Context<InitBidEscrow>) -> Result<()> {
+        instructions::init_escrows::handler_bid(ctx)
     }
 
     /// Mint a Yes/No pair by depositing USDC
@@ -43,9 +63,9 @@ pub mod meridian {
         instructions::merge_pair::handler(ctx, amount)
     }
 
-    /// Place a limit order on the order book
-    pub fn place_order(
-        ctx: Context<PlaceOrder>,
+    /// Place a limit order with match-at-place
+    pub fn place_order<'info>(
+        ctx: Context<'_, '_, 'info, 'info, PlaceOrder<'info>>,
         is_bid: bool,
         price: u64,
         quantity: u64,

@@ -6,8 +6,7 @@ import { PublicKey } from "@solana/web3.js";
 import { Program, AnchorProvider, BN } from "@coral-xyz/anchor";
 import MarketCard, { MarketData } from "@/components/MarketCard";
 import {
-  findConfigPda,
-  findMarketPda,
+  findMarketRegistryPda,
   findOrderbookPda,
 } from "@/lib/utils";
 import type { Meridian } from "../../target/types/meridian";
@@ -32,22 +31,22 @@ export default function MarketsPage() {
       );
       const program = new Program<Meridian>(idl as Meridian, provider);
 
-      const [configPda] = findConfigPda();
-      let configAccount;
+      // Fetch market registry to get all market pubkeys
+      const [registryPda] = findMarketRegistryPda();
+      let registryAccount;
       try {
-        configAccount = await program.account.config.fetch(configPda);
+        registryAccount = await program.account.marketRegistry.fetch(registryPda);
       } catch {
         setMarkets([]);
         setLoading(false);
         return;
       }
 
-      const marketCount = (configAccount.marketCount as BN).toNumber();
+      const marketPubkeys = registryAccount.markets as PublicKey[];
       const marketsList: MarketData[] = [];
 
-      for (let i = 0; i < marketCount; i++) {
+      for (const marketPda of marketPubkeys) {
         try {
-          const [marketPda] = findMarketPda(new BN(i));
           const market = await program.account.market.fetch(marketPda);
 
           let bestBid: BN | null = null;

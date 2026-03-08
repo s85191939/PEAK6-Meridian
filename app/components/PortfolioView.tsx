@@ -8,13 +8,13 @@ import { Program, AnchorProvider, BN } from "@coral-xyz/anchor";
 import Link from "next/link";
 import {
   findConfigPda,
-  findMarketPda,
+  findMarketRegistryPda,
   findVaultPda,
   formatStrikePrice,
   formatMarketDate,
   formatTokenAmount,
 } from "@/lib/utils";
-import { PROGRAM_ID, MAG7_TICKERS, TOKEN_PROGRAM_ID } from "@/lib/constants";
+import { MAG7_TICKERS } from "@/lib/constants";
 import type { Meridian } from "../../target/types/meridian";
 import idl from "../../target/idl/meridian.json";
 
@@ -58,23 +58,22 @@ export default function PortfolioView() {
       );
       const program = new Program<Meridian>(idl as Meridian, provider);
 
-      // Fetch config to get market count
-      const [configPda] = findConfigPda();
-      let configAccount;
+      // Fetch market registry to get all market pubkeys
+      const [registryPda] = findMarketRegistryPda();
+      let registryAccount;
       try {
-        configAccount = await program.account.config.fetch(configPda);
+        registryAccount = await program.account.marketRegistry.fetch(registryPda);
       } catch {
         setPositions([]);
         setLoading(false);
         return;
       }
 
-      const marketCount = (configAccount.marketCount as BN).toNumber();
+      const marketPubkeys = registryAccount.markets as PublicKey[];
       const userPositions: Position[] = [];
 
-      for (let i = 0; i < marketCount; i++) {
+      for (const marketPda of marketPubkeys) {
         try {
-          const [marketPda] = findMarketPda(new BN(i));
           const market = await program.account.market.fetch(marketPda);
 
           const yesMint = market.yesMint as PublicKey;
@@ -162,8 +161,14 @@ export default function PortfolioView() {
           tokenType === "yes" ? position.yesBalance : position.noBalance;
 
         const userToken = await getAssociatedTokenAddress(tokenMint, publicKey);
+
+        // Fetch config to get USDC mint
+        const [configPda] = findConfigPda();
+        const configAccount = await program.account.config.fetch(configPda);
+        const usdcMint = configAccount.usdcMint as PublicKey;
+
         const userUsdc = await getAssociatedTokenAddress(
-          position.noMint, // This needs to be the USDC mint from config
+          usdcMint,
           publicKey
         );
 
@@ -178,7 +183,6 @@ export default function PortfolioView() {
             userToken,
             userUsdc,
             vault: vaultPda,
-            tokenProgram: TOKEN_PROGRAM_ID,
           })
           .transaction();
 

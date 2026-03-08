@@ -4,6 +4,8 @@ use crate::state::{Market, OrderBook};
 use crate::errors::MeridianError;
 
 /// Cancel an open order and return locked collateral to the maker.
+///   - Bids: return USDC from bid_escrow
+///   - Asks: return Yes tokens from escrow_yes
 pub fn handler(ctx: Context<CancelOrder>, order_id: u64) -> Result<()> {
     let orderbook = &mut ctx.accounts.orderbook;
 
@@ -21,23 +23,23 @@ pub fn handler(ctx: Context<CancelOrder>, order_id: u64) -> Result<()> {
     let is_bid = order.is_bid;
     let price = order.price;
 
-    // Return collateral
+    // Market PDA signer seeds
     let market = &ctx.accounts.market;
     let ticker_bytes = market.ticker.as_bytes();
     let strike_bytes = market.strike_price.to_le_bytes();
     let date_bytes = market.date.to_le_bytes();
     let bump = market.bump;
-    let seeds = &[
-        b"market" as &[u8],
+    let seeds: &[&[u8]] = &[
+        b"market",
         ticker_bytes,
         &strike_bytes,
         &date_bytes,
         &[bump],
     ];
-    let signer_seeds = &[&seeds[..]];
+    let signer_seeds = &[seeds];
 
     if is_bid {
-        // Return locked USDC from vault
+        // Return locked USDC from bid_escrow
         let usdc_to_return = (price as u128)
             .checked_mul(remaining as u128)
             .ok_or(MeridianError::MathOverflow)?
@@ -48,7 +50,7 @@ pub fn handler(ctx: Context<CancelOrder>, order_id: u64) -> Result<()> {
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
                 Transfer {
-                    from: ctx.accounts.vault.to_account_info(),
+                    from: ctx.accounts.bid_escrow.to_account_info(),
                     to: ctx.accounts.user_usdc.to_account_info(),
                     authority: ctx.accounts.market.to_account_info(),
                 },
@@ -57,7 +59,7 @@ pub fn handler(ctx: Context<CancelOrder>, order_id: u64) -> Result<()> {
             usdc_to_return,
         )?;
     } else {
-        // Return locked Yes tokens from escrow
+        // Return locked Yes tokens from escrow_yes
         token::transfer(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
@@ -88,30 +90,36 @@ pub struct CancelOrder<'info> {
         seeds = [b"market", market.ticker.as_bytes(), &market.strike_price.to_le_bytes(), &market.date.to_le_bytes()],
         bump = market.bump,
     )]
-    pub market: Account<'info, Market>,
+    pub market: Box<Account<'info, Market>>,
 
     #[account(
         mut,
         seeds = [b"orderbook", market.key().as_ref()],
         bump = orderbook.bump,
     )]
-    pub orderbook: Account<'info, OrderBook>,
+    pub orderbook: Box<Account<'info, OrderBook>>,
 
+    /// Escrow for bid USDC collateral
     #[account(
         mut,
-        seeds = [b"vault", market.key().as_ref()],
-        bump = market.vault_bump,
+        seeds = [b"bid_escrow", market.key().as_ref()],
+        bump = market.bid_escrow_bump,
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub bid_escrow: Box<Account<'info, TokenAccount>>,
+
+    /// Escrow for ask Yes token collateral
+    #[account(
+        mut,
+        seeds = [b"escrow_yes", market.key().as_ref()],
+        bump = market.escrow_yes_bump,
+    )]
+    pub escrow_yes: Box<Account<'info, TokenAccount>>,
 
     #[account(mut)]
     pub user_usdc: Account<'info, TokenAccount>,
 
     #[account(mut)]
     pub user_yes: Account<'info, TokenAccount>,
-
-    #[account(mut)]
-    pub escrow_yes: Account<'info, TokenAccount>,
 
     pub token_program: Program<'info, Token>,
 }
