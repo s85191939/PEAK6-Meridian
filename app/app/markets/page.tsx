@@ -17,7 +17,7 @@ export default function MarketsPage() {
   const [markets, setMarkets] = useState<MarketData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | "active" | "settled">("all");
+  const [filter, setFilter] = useState<"all" | "active" | "settled">("active");
 
   const fetchMarkets = useCallback(async () => {
     try {
@@ -149,7 +149,7 @@ export default function MarketsPage() {
 
       {/* Filters */}
       <div className="mb-6 flex items-center gap-2">
-        {(["all", "active", "settled"] as const).map((f) => (
+        {(["active", "settled", "all"] as const).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}

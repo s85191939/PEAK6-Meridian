@@ -89,8 +89,17 @@ pub mod meridian {
     }
 
     /// Settle a market with the closing price (admin/oracle)
+    /// Called by automation service with oracle-sourced price.
+    /// Enforces: price > 0, market not already settled, after 4 PM ET.
     pub fn settle_market(ctx: Context<SettleMarket>, settlement_price: u64) -> Result<()> {
         instructions::settle::handler(ctx, settlement_price)
+    }
+
+    /// Admin settle override — emergency fallback when oracle fails.
+    /// Enforces 1-hour delay after market close (5 PM ET) before allowed.
+    /// Used only when oracle is unavailable after 15-minute retry window.
+    pub fn admin_settle_override(ctx: Context<SettleMarket>, settlement_price: u64) -> Result<()> {
+        instructions::settle::handler_admin_override(ctx, settlement_price)
     }
 
     /// Redeem winning tokens for USDC after settlement

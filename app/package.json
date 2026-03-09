@@ -21,7 +21,8 @@
     "buffer": "^6.0.3",
     "next": "16.1.6",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "yahoo-finance2": "^3.13.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
