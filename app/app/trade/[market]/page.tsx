@@ -40,7 +40,7 @@ export default function TradePage({
       const provider = new AnchorProvider(
         connection,
         {
-          publicKey: PublicKey.default,
+          publicKey: new PublicKey("11111111111111111111111111111111"),
           signTransaction: async (tx) => tx,
           signAllTransactions: async (txs) => txs,
         },
@@ -195,7 +195,7 @@ export default function TradePage({
                 <span className="text-gray-700">&middot;</span>
                 <span>{formatMarketDate(market.date)}</span>
                 <span className="text-gray-700">&middot;</span>
-                <span className="font-mono">{market.totalPairsMinted.toNumber().toLocaleString()} pairs</span>
+                <span className="font-mono">{(market.totalPairsMinted.toNumber() / 1_000_000).toLocaleString("en-US", { maximumFractionDigits: 0 })} contracts</span>
                 {!market.settled && !expired && (
                   <>
                     <span className="text-gray-700">&middot;</span>

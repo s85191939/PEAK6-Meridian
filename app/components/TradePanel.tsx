@@ -6,6 +6,7 @@ import { useConnection } from "@solana/wallet-adapter-react";
 import { PublicKey, Transaction } from "@solana/web3.js";
 import {
   getAssociatedTokenAddress,
+  createAssociatedTokenAccountInstruction,
 } from "@solana/spl-token";
 import { Program, AnchorProvider, BN } from "@coral-xyz/anchor";
 import { MarketData } from "./MarketCard";
@@ -166,13 +167,51 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
       const userYes = await getAssociatedTokenAddress(market.yesMint, publicKey);
       const userNo = await getAssociatedTokenAddress(market.noMint, publicKey);
 
-      const quantityBn = parseUsdc(quantityInput);
       const tx = new Transaction();
 
-      const yesOrderPrice = isYes ? priceBn : computeNoPrice(priceBn);
-      const yesSideIsBid = action === "buy_yes" || action === "sell_no";
+      // Auto-create any missing token accounts (user pays rent ~0.002 SOL each)
+      const [usdcInfo, yesInfo, noInfo] = await Promise.all([
+        connection.getAccountInfo(userUsdc),
+        connection.getAccountInfo(userYes),
+        connection.getAccountInfo(userNo),
+      ]);
+      if (!usdcInfo) {
+        tx.add(createAssociatedTokenAccountInstruction(publicKey, userUsdc, publicKey, usdcMint));
+      }
+      if (!yesInfo) {
+        tx.add(createAssociatedTokenAccountInstruction(publicKey, userYes, publicKey, market.yesMint));
+      }
+      if (!noInfo) {
+        tx.add(createAssociatedTokenAccountInstruction(publicKey, userNo, publicKey, market.noMint));
+      }
 
-      if (action === "buy_no") {
+      const quantityBn = parseUsdc(quantityInput);
+
+      // On the Yes-side orderbook:
+      //   Buy Yes  → bid for Yes tokens (USDC locked in bid escrow at your price)
+      //   Sell Yes → ask for Yes tokens (Yes tokens locked in ask escrow)
+      //   Buy No   → mint pair ($1 USDC → Yes + No), then sell Yes as ask
+      //   Sell No  → bid for Yes tokens (when filled, merge Yes+No → $1 USDC)
+
+      if (action === "buy_yes") {
+        // Simple bid: lock USDC in bid escrow at user's price
+        // Cost = price × quantity (NOT $1 per pair)
+        const placeIx = await program.methods
+          .placeOrder(true, priceBn, quantityBn)
+          .accounts({
+            user: publicKey,
+            config: configPda,
+            market: marketKey,
+            orderbook: orderbookPda,
+            bidEscrow: bidEscrowPda,
+            userUsdc,
+            userYes,
+            escrowYes: escrowYesPda,
+          } as any)
+          .instruction();
+        tx.add(placeIx);
+      } else if (action === "buy_no") {
+        // Step 1: Mint a Yes/No pair by depositing $1 USDC
         const mintIx = await program.methods
           .mintPair(quantityBn)
           .accounts({
@@ -189,8 +228,10 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
           .instruction();
         tx.add(mintIx);
 
+        // Step 2: Sell the Yes tokens (ask on the Yes book at slider price)
+        // If this fills, user gets back yesPrice, net cost = 1 - yesPrice = noPrice
         const placeIx = await program.methods
-          .placeOrder(false, yesOrderPrice, quantityBn)
+          .placeOrder(false, priceBn, quantityBn)
           .accounts({
             user: publicKey,
             config: configPda,
@@ -203,9 +244,10 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
           } as any)
           .instruction();
         tx.add(placeIx);
-      } else if (action === "sell_no") {
+      } else if (action === "sell_yes") {
+        // Place ask directly — user's Yes tokens go to escrow
         const placeIx = await program.methods
-          .placeOrder(true, yesOrderPrice, quantityBn)
+          .placeOrder(false, priceBn, quantityBn)
           .accounts({
             user: publicKey,
             config: configPda,
@@ -218,25 +260,11 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
           } as any)
           .instruction();
         tx.add(placeIx);
-
-        const mergeIx = await program.methods
-          .mergePair(quantityBn)
-          .accounts({
-            user: publicKey,
-            config: configPda,
-            market: marketKey,
-            yesMint: market.yesMint,
-            noMint: market.noMint,
-            vault: vaultPda,
-            userUsdc,
-            userYes,
-            userNo,
-          } as any)
-          .instruction();
-        tx.add(mergeIx);
       } else {
+        // Sell No: bid for Yes at slider price
+        // When filled, user gets Yes tokens and can merge Yes+No → $1 USDC
         const placeIx = await program.methods
-          .placeOrder(yesSideIsBid, yesOrderPrice, quantityBn)
+          .placeOrder(true, priceBn, quantityBn)
           .accounts({
             user: publicKey,
             config: configPda,
@@ -255,7 +283,21 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
       await connection.confirmTransaction(sig, "confirmed");
 
       setTxSignature(sig);
-      setSuccess("Order placed successfully!");
+
+      // Descriptive success messages
+      const qtyStr = qty.toFixed(0);
+      const priceStr = (pricePercent / 100).toFixed(2);
+      if (action === "buy_yes") {
+        setSuccess(`Bid placed: ${qtyStr} Yes contract${qty !== 1 ? "s" : ""} at $${priceStr} each. $${estimatedCost.toFixed(2)} USDC locked.`);
+      } else if (action === "buy_no") {
+        const noPriceStr = ((100 - pricePercent) / 100).toFixed(2);
+        setSuccess(`Minted ${qtyStr} pair${qty !== 1 ? "s" : ""} and listed Yes for sale. You hold ${qtyStr} No contract${qty !== 1 ? "s" : ""} (net cost ≈ $${noPriceStr} each if Yes sells).`);
+      } else if (action === "sell_yes") {
+        setSuccess(`Ask placed: ${qtyStr} Yes contract${qty !== 1 ? "s" : ""} listed at $${priceStr} each.`);
+      } else {
+        setSuccess(`Bid placed: ${qtyStr} Yes at $${priceStr} to close your No position.`);
+      }
+
       setQuantityInput("");
       onTradeComplete?.();
     } catch (err: unknown) {
@@ -304,13 +346,19 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
   const qty = parseFloat(quantityInput) || 0;
   let estimatedCost: number;
   let costLabel: string;
+  let upfrontCost: number | null = null; // Only for Buy No (mint pair costs $1 each)
 
   if (action === "buy_yes") {
+    // Simple bid: cost = price × quantity (locked in escrow)
     estimatedCost = (pricePercent / 100) * qty;
-    costLabel = "Estimated cost";
+    costLabel = "Cost (locked in order)";
   } else if (action === "buy_no") {
-    estimatedCost = ((100 - pricePercent) / 100) * qty;
-    costLabel = "Estimated cost";
+    // Mint pair ($1 each) + sell Yes at slider price
+    // Net cost = $1 - yesPrice = noPrice
+    const noPriceDecimal = (100 - pricePercent) / 100;
+    estimatedCost = noPriceDecimal * qty;
+    upfrontCost = 1.0 * qty; // Mint pair costs $1 each
+    costLabel = "Net cost (if Yes sells)";
   } else if (action === "sell_yes") {
     estimatedCost = (pricePercent / 100) * qty;
     costLabel = "Estimated proceeds";
@@ -320,20 +368,20 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
   }
 
   // Payoff display
-  const strikeStr = market.strikePrice.toNumber() / 1_000_000;
+  const strikeStr = market.strikePrice.toNumber() / 100;
   const payoffText = (() => {
     if (!qty || qty <= 0) return null;
     const cost = estimatedCost.toFixed(2);
     if (action === "buy_yes") {
-      return `You pay $${cost}. You win $${qty.toFixed(2)} if ${market.ticker} closes above $${strikeStr.toFixed(2)}.`;
+      return `Your $${cost} is locked as a bid. If matched, you get ${qty} Yes contract${qty !== 1 ? 's' : ''}. Each pays $1.00 if ${market.ticker} closes above $${strikeStr.toFixed(2)}, $0.00 otherwise.`;
     }
     if (action === "buy_no") {
-      return `You pay $${cost}. You win $${qty.toFixed(2)} if ${market.ticker} closes below $${strikeStr.toFixed(2)}.`;
+      return `Mints ${qty} pair${qty !== 1 ? 's' : ''} for $${(qty).toFixed(2)}, then lists your Yes tokens for sale at $${(pricePercent / 100).toFixed(2)} each. Net cost ≈ $${cost} if the Yes side sells. You keep the No contract${qty !== 1 ? 's' : ''} — each pays $1.00 if ${market.ticker} closes below $${strikeStr.toFixed(2)}.`;
     }
     if (action === "sell_yes") {
-      return `You receive $${cost} if your ask is filled. Max loss: $${(qty - estimatedCost).toFixed(2)} if ${market.ticker} closes above $${strikeStr.toFixed(2)}.`;
+      return `Lists ${qty} Yes contract${qty !== 1 ? 's' : ''} for sale at $${(pricePercent / 100).toFixed(2)} each. You receive $${cost} when filled.`;
     }
-    return `You receive $${cost} if your bid is filled.`;
+    return `Places a bid for ${qty} Yes contract${qty !== 1 ? 's' : ''} at $${(pricePercent / 100).toFixed(2)}. When filled, merge with your No tokens to get $${qty.toFixed(2)} USDC back.`;
   })();
 
   const constraintMessage = getConstraintMessage();
@@ -390,12 +438,17 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
 
         {/* Price slider */}
         <div>
-          <label className="mb-2 flex items-center justify-between text-sm text-gray-400">
-            <span>Price</span>
+          <label className="mb-1 flex items-center justify-between text-sm text-gray-400">
+            <span>Your limit price</span>
             <span className="font-mono text-sm font-bold text-white">
               {formatPrice(displayPrice)} ({isYes ? pricePercent : 100 - pricePercent}%)
             </span>
           </label>
+          <p className="mb-3 text-[11px] text-gray-500">
+            {isBuy
+              ? "The most you\u2019re willing to pay per contract. Your order waits in the book until someone matches it."
+              : "The least you\u2019re willing to accept per contract."}
+          </p>
           <input
             type="range"
             min={1}
@@ -405,21 +458,24 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
             className="h-2 w-full cursor-pointer"
           />
           <div className="mt-1 flex justify-between text-[11px] text-gray-600">
-            <span>$0.01</span>
-            <span>$0.99</span>
+            <span>$0.01 (unlikely)</span>
+            <span>$0.99 (very likely)</span>
           </div>
         </div>
 
         {/* Quantity */}
         <div>
-          <label className="mb-2 block text-sm text-gray-400">
-            Quantity (contracts)
+          <label className="mb-1 block text-sm text-gray-400">
+            How many contracts?
           </label>
+          <p className="mb-2 text-[11px] text-gray-500">
+            Each contract pays $1.00 if you win, $0.00 if you lose.
+          </p>
           <input
             type="number"
             min="0"
             step="1"
-            placeholder="0"
+            placeholder="e.g. 10"
             value={quantityInput}
             onChange={(e) => setQuantityInput(e.target.value)}
             className="w-full rounded-xl border border-gray-700/60 bg-gray-800/50 px-4 py-3 font-mono text-sm text-white placeholder-gray-600 outline-none transition-colors focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500/50"
@@ -428,21 +484,39 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
 
         {/* Summary */}
         <div className="space-y-2 rounded-xl bg-gray-800/30 p-4 ring-1 ring-inset ring-gray-700/30">
+          {upfrontCost !== null && qty > 0 && (
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-400">Upfront (mint pair)</span>
+              <span className="font-mono font-bold text-yellow-400">
+                ${upfrontCost.toFixed(2)} USDC
+              </span>
+            </div>
+          )}
           <div className="flex items-center justify-between text-sm">
             <span className="text-gray-400">{costLabel}</span>
             <span className="font-mono font-bold text-white">
               ${estimatedCost.toFixed(2)} USDC
             </span>
           </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-400">Max payout</span>
-            <span className="font-mono font-bold text-emerald-400">
-              ${qty.toFixed(2)} USDC
-            </span>
-          </div>
+          {isBuy && qty > 0 && (
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-400">If you win</span>
+              <span className="font-mono font-bold text-emerald-400">
+                +${qty.toFixed(2)} USDC
+              </span>
+            </div>
+          )}
+          {isBuy && qty > 0 && estimatedCost > 0 && (
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-400">If you lose</span>
+              <span className="font-mono font-bold text-red-400">
+                -${estimatedCost.toFixed(2)} USDC
+              </span>
+            </div>
+          )}
           {qty > 0 && estimatedCost > 0 && (
             <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-400">Return</span>
+              <span className="text-gray-400">Potential return</span>
               <span className="font-mono font-bold text-emerald-400">
                 {((qty / estimatedCost - 1) * 100).toFixed(0)}%
               </span>
@@ -450,10 +524,10 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
           )}
         </div>
 
-        {/* Payoff display */}
+        {/* Payoff explainer */}
         {payoffText && (
           <p className="rounded-xl bg-gray-800/20 px-3 py-2.5 text-xs leading-relaxed text-gray-400">
-            {payoffText}
+            💡 {payoffText}
           </p>
         )}
 
@@ -526,9 +600,9 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
           )}
         </button>
 
-        {/* $1.00 invariant note */}
+        {/* Explainer */}
         <p className="text-center text-[11px] text-gray-600">
-          Yes + No = $1.00 &middot; $1.00 invariant
+          Yes + No always = $1.00 &middot; Contracts settle at market close
         </p>
       </div>
     </div>

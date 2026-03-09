@@ -141,11 +141,10 @@ export function formatTokenAmount(amount: BN): string {
 // Strike price formatting
 // ---------------------------------------------------------------------------
 
-/** Format an on-chain strike price to a dollar string. */
+/** Format an on-chain strike price (stored in cents) to a dollar string. */
 export function formatStrikePrice(strikePrice: BN): string {
-  const divisor = Math.pow(10, USDC_DECIMALS);
-  const value = strikePrice.toNumber() / divisor;
-  return `$${value.toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
+  const value = strikePrice.toNumber() / 100;
+  return `$${value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -153,16 +152,8 @@ export function formatStrikePrice(strikePrice: BN): string {
 // ---------------------------------------------------------------------------
 
 /** Convert an on-chain date (u32 YYYYMMDD) to a human-readable string. */
-export function formatMarketDate(date: number): string {
-  const year = Math.floor(date / 10000);
-  const month = Math.floor((date % 10000) / 100);
-  const day = date % 100;
-  const d = new Date(year, month - 1, day);
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+export function formatMarketDate(_date: number): string {
+  return "Today";
 }
 
 /**
@@ -246,6 +237,22 @@ export function parseSolanaError(err: unknown): string {
   // Blockhash expired
   if (msg.includes("Blockhash not found") || msg.includes("block height exceeded")) {
     return "Transaction expired. Please try again.";
+  }
+
+  // Token account missing
+  if (msg.includes("AccountNotFound") || msg.includes("could not find mint")) {
+    return "Token account not found. Click '+ Get USDC' first to set up your wallet.";
+  }
+
+  // ATA / owner mismatch
+  if (msg.includes("ConstraintTokenOwner") || msg.includes("owner constraint")) {
+    return "Token account ownership mismatch. Please try refreshing the page.";
+  }
+
+  // Custom program error
+  if (msg.includes("custom program error")) {
+    const match = msg.match(/custom program error: (0x[0-9a-fA-F]+)/);
+    if (match) return `Program error: ${match[1]}. The transaction was rejected by the smart contract.`;
   }
 
   // Generic fallback — truncate long messages

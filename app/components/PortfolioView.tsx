@@ -12,7 +12,6 @@ import {
   findVaultPda,
   formatStrikePrice,
   formatMarketDate,
-  formatTokenAmount,
   formatUsdc,
   parseSolanaError,
   explorerUrl,
@@ -217,28 +216,28 @@ export default function PortfolioView() {
     [publicKey, signTransaction, connection, sendTransaction, fetchPositions]
   );
 
-  // Calculate portfolio P&L for each position
-  const getPositionValue = (pos: Position): { value: number; pnl: number } => {
+  // Calculate portfolio value for each position
+  const getPositionValue = (pos: Position): { value: number; maxPayout: number; contracts: number } => {
     const yesQty = pos.yesBalance.toNumber() / 1_000_000;
     const noQty = pos.noBalance.toNumber() / 1_000_000;
+    const contracts = Math.max(yesQty, noQty);
 
     if (pos.settled) {
       // Settled: winning tokens worth $1, losing worth $0
       const yesValue = pos.outcomeYesWins ? yesQty : 0;
       const noValue = pos.outcomeYesWins ? 0 : noQty;
-      const value = yesValue + noValue;
-      // Assume average cost basis of $0.50 (we don't track entry price on-chain)
-      const costBasis = (yesQty + noQty) * 0.5;
-      return { value, pnl: value - costBasis };
+      return { value: yesValue + noValue, maxPayout: yesValue + noValue, contracts };
     }
 
-    // Active: estimate at 50c each (midpoint) since we don't have live price here
-    const value = (yesQty + noQty) * 0.5;
-    return { value, pnl: 0 };
+    // Active: max payout = contracts × $1.00
+    const maxPayout = contracts;
+    // Current estimated value: each contract is worth ~$0.50 (midpoint — no live price in portfolio)
+    const value = contracts * 0.5;
+    return { value, maxPayout, contracts };
   };
 
-  const totalPortfolioValue = positions.reduce(
-    (sum, pos) => sum + getPositionValue(pos).value,
+  const totalMaxPayout = positions.reduce(
+    (sum, pos) => sum + getPositionValue(pos).maxPayout,
     0
   );
 
@@ -287,10 +286,13 @@ export default function PortfolioView() {
       <div className="grid grid-cols-3 gap-4">
         <div className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-5">
           <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
-            Portfolio Value
+            Max Payout
           </span>
-          <p className="mt-1 font-mono text-2xl font-bold text-white">
-            ${totalPortfolioValue.toFixed(2)}
+          <p className="mt-1 font-mono text-2xl font-bold text-emerald-400">
+            ${totalMaxPayout.toFixed(2)}
+          </p>
+          <p className="mt-0.5 text-[11px] text-gray-600">
+            if all positions win
           </p>
         </div>
         <div className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-5">
@@ -300,6 +302,9 @@ export default function PortfolioView() {
           <p className="mt-1 font-mono text-2xl font-bold text-white">
             ${usdcBalance ? formatUsdc(usdcBalance) : "0.00"}
           </p>
+          <p className="mt-0.5 text-[11px] text-gray-600">
+            available to trade
+          </p>
         </div>
         <div className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-5">
           <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
@@ -307,6 +312,9 @@ export default function PortfolioView() {
           </span>
           <p className="mt-1 font-mono text-2xl font-bold text-white">
             {positions.length}
+          </p>
+          <p className="mt-0.5 text-[11px] text-gray-600">
+            active contracts
           </p>
         </div>
       </div>
@@ -403,7 +411,7 @@ export default function PortfolioView() {
                         {pos.ticker} &gt; {formatStrikePrice(pos.strikePrice)}
                       </Link>
                       <p className="text-xs text-gray-500">
-                        Exp: {formatMarketDate(pos.date)}
+                        Expires {formatMarketDate(pos.date).toLowerCase()}
                       </p>
                     </div>
                   </div>
@@ -423,31 +431,38 @@ export default function PortfolioView() {
                   </div>
                 </div>
 
-                {/* Balances + P&L */}
+                {/* Position details */}
                 <div className="mb-4 grid grid-cols-3 gap-3">
                   <div className="rounded-xl bg-gray-800/30 p-3 ring-1 ring-inset ring-gray-700/30">
-                    <span className="text-[11px] font-medium text-gray-500">Yes Tokens</span>
-                    <p className="font-mono text-sm font-bold text-emerald-400">
-                      {formatTokenAmount(pos.yesBalance)}
+                    <span className="text-[11px] font-medium text-gray-500">
+                      {pos.yesBalance.gt(new BN(0)) && pos.noBalance.gt(new BN(0))
+                        ? "Contracts"
+                        : pos.yesBalance.gt(new BN(0))
+                          ? "Yes Contracts"
+                          : "No Contracts"}
+                    </span>
+                    <p className="font-mono text-sm font-bold text-white">
+                      {posValue.contracts.toFixed(0)}
                     </p>
                   </div>
                   <div className="rounded-xl bg-gray-800/30 p-3 ring-1 ring-inset ring-gray-700/30">
-                    <span className="text-[11px] font-medium text-gray-500">No Tokens</span>
-                    <p className="font-mono text-sm font-bold text-red-400">
-                      {formatTokenAmount(pos.noBalance)}
-                    </p>
-                  </div>
-                  <div className="rounded-xl bg-gray-800/30 p-3 ring-1 ring-inset ring-gray-700/30">
-                    <span className="text-[11px] font-medium text-gray-500">Est. Value</span>
+                    <span className="text-[11px] font-medium text-gray-500">Side</span>
                     <p className={`font-mono text-sm font-bold ${
-                      posValue.pnl >= 0 ? "text-emerald-400" : "text-red-400"
+                      pos.yesBalance.gt(new BN(0)) ? "text-emerald-400" : "text-red-400"
                     }`}>
-                      ${posValue.value.toFixed(2)}
-                      {pos.settled && posValue.pnl !== 0 && (
-                        <span className="ml-1 text-[11px]">
-                          ({posValue.pnl >= 0 ? "+" : ""}{posValue.pnl.toFixed(2)})
-                        </span>
-                      )}
+                      {pos.yesBalance.gt(new BN(0)) && pos.noBalance.gt(new BN(0))
+                        ? "Yes + No"
+                        : pos.yesBalance.gt(new BN(0))
+                          ? "Yes ↑"
+                          : "No ↓"}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-gray-800/30 p-3 ring-1 ring-inset ring-gray-700/30">
+                    <span className="text-[11px] font-medium text-gray-500">
+                      {pos.settled ? "Payout" : "Max Payout"}
+                    </span>
+                    <p className="font-mono text-sm font-bold text-emerald-400">
+                      ${posValue.maxPayout.toFixed(2)}
                     </p>
                   </div>
                 </div>
@@ -472,7 +487,7 @@ export default function PortfolioView() {
                           {redeeming ===
                           `${pos.marketPubkey.toBase58()}-yes`
                             ? "Redeeming..."
-                            : `Redeem Yes (${formatTokenAmount(pos.yesBalance)})`}
+                            : `Redeem Yes (${(pos.yesBalance.toNumber() / 1_000_000).toFixed(0)})`}
                         </button>
                       )}
                       {pos.noBalance.gt(new BN(0)) && (
@@ -491,7 +506,7 @@ export default function PortfolioView() {
                           {redeeming ===
                           `${pos.marketPubkey.toBase58()}-no`
                             ? "Redeeming..."
-                            : `Redeem No (${formatTokenAmount(pos.noBalance)})`}
+                            : `Redeem No (${(pos.noBalance.toNumber() / 1_000_000).toFixed(0)})`}
                         </button>
                       )}
                     </>

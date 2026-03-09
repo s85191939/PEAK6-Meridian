@@ -25,7 +25,7 @@ export default function MarketsPage() {
       const provider = new AnchorProvider(
         connection,
         {
-          publicKey: PublicKey.default,
+          publicKey: new PublicKey("11111111111111111111111111111111"),
           signTransaction: async (tx) => tx,
           signAllTransactions: async (txs) => txs,
         },

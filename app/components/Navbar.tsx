@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
+import UsdcFaucet from "./UsdcFaucet";
 
 const WalletMultiButton = dynamic(
   async () =>
@@ -78,9 +79,12 @@ export default function Navbar() {
           })}
         </div>
 
-        {/* Wallet */}
-        <div className="wallet-adapter-button-wrapper">
-          <WalletMultiButton />
+        {/* USDC Balance + Faucet + Wallet */}
+        <div className="flex items-center gap-3">
+          <UsdcFaucet />
+          <div className="wallet-adapter-button-wrapper">
+            <WalletMultiButton />
+          </div>
         </div>
       </div>
     </nav>

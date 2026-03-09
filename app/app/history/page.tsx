@@ -55,7 +55,7 @@ export default function HistoryPage() {
       const provider = new AnchorProvider(
         connection,
         {
-          publicKey: PublicKey.default,
+          publicKey: new PublicKey("11111111111111111111111111111111"),
           signTransaction: async (tx) => tx,
           signAllTransactions: async (txs) => txs,
         },
@@ -76,7 +76,7 @@ export default function HistoryPage() {
 
       const allEntries: HistoryEntry[] = [];
       const marketKeys = (registry.markets as PublicKey[]).filter(
-        (k: PublicKey) => !k.equals(PublicKey.default)
+        (k: PublicKey) => !k.equals(new PublicKey("11111111111111111111111111111111"))
       );
 
       // Fetch all markets and orderbooks in parallel

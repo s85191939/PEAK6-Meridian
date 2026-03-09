@@ -105,7 +105,7 @@ export default function MarketCard({ market }: { market: MarketData }) {
         <span className="font-semibold text-white">
           {formatStrikePrice(market.strikePrice)}
         </span>{" "}
-        on {formatMarketDate(market.date)}?
+        {formatMarketDate(market.date).toLowerCase()}?
       </p>
 
       {/* Price bars */}
@@ -147,7 +147,7 @@ export default function MarketCard({ market }: { market: MarketData }) {
       <div className="mt-4 flex items-center justify-between">
         <div className="flex items-center gap-3 text-xs text-gray-500">
           <span className="font-mono">
-            {market.totalPairsMinted.toNumber().toLocaleString()} pairs
+            {(market.totalPairsMinted.toNumber() / 1_000_000).toLocaleString("en-US", { maximumFractionDigits: 0 })} contracts
           </span>
           {!market.settled && !expired && (
             <>
