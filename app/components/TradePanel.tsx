@@ -100,18 +100,44 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
   const hasYesPosition = yesBalance.gt(new BN(0));
   const hasNoPosition = noBalance.gt(new BN(0));
 
-  // Position awareness: show soft warning but don't block trades
-  // Users may legitimately hold both (e.g., minted pairs for market-making)
-  const isActionDisabled = (_a: TradeAction): boolean => {
-    return false; // Never block — show info instead
+  // Position constraints per spec:
+  // - Holding No? Can't buy Yes (sell your No first)
+  // - Holding Yes? Can't buy No (sell your Yes first)
+  // All tabs stay navigable so users can read explanations and find the right action.
+  // Only the submit button is disabled when a constraint applies.
+  const isTransactionBlocked = (): boolean => {
+    if (action === "buy_yes" && hasNoPosition) return true;
+    if (action === "buy_no" && hasYesPosition) return true;
+    return false;
   };
 
-  const getConstraintMessage = (): string | null => {
+  // Tabs are never disabled — users can always navigate to read info
+  const isActionDisabled = (_a: TradeAction): boolean => false;
+
+  const getConstraintMessage = (): {
+    title: string;
+    explanation: string;
+    guidance: string;
+    guidanceAction: TradeAction;
+  } | null => {
+    const noQty = (noBalance.toNumber() / 1_000_000).toFixed(0);
+    const yesQty = (yesBalance.toNumber() / 1_000_000).toFixed(0);
+
     if (action === "buy_yes" && hasNoPosition) {
-      return `Note: You hold ${(noBalance.toNumber() / 1_000_000).toFixed(0)} No contract(s). Consider selling No first, or proceed to hold both.`;
+      return {
+        title: "You already hold a No position",
+        explanation: `You own ${noQty} No contract${noQty !== "1" ? "s" : ""} on this market. Each No contract is a bet that ${market.ticker} will close below the strike price. Buying Yes (the opposite bet) while holding No isn't allowed — it would create a conflicting position.`,
+        guidance: `To switch sides, first sell your ${noQty} No contract${noQty !== "1" ? "s" : ""} using the "Sell No" tab. Once sold, you can buy Yes.`,
+        guidanceAction: "sell_no",
+      };
     }
     if (action === "buy_no" && hasYesPosition) {
-      return `Note: You hold ${(yesBalance.toNumber() / 1_000_000).toFixed(0)} Yes contract(s). Consider selling Yes first, or proceed to hold both.`;
+      return {
+        title: "You already hold a Yes position",
+        explanation: `You own ${yesQty} Yes contract${yesQty !== "1" ? "s" : ""} on this market. Each Yes contract is a bet that ${market.ticker} will close above the strike price. Buying No (the opposite bet) while holding Yes isn't allowed — it would create a conflicting position.`,
+        guidance: `To switch sides, first sell your ${yesQty} Yes contract${yesQty !== "1" ? "s" : ""} using the "Sell Yes" tab. Once sold, you can buy No.`,
+        guidanceAction: "sell_yes",
+      };
     }
     return null;
   };
@@ -132,9 +158,8 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
       return;
     }
 
-    const constraintMsg = getConstraintMessage();
-    if (constraintMsg) {
-      setError(constraintMsg);
+    if (isTransactionBlocked()) {
+      setError("Position constraint: sell your existing position first (see guidance above).");
       return;
     }
 
@@ -317,7 +342,7 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
     sendTransaction,
     connection,
     onTradeComplete,
-    getConstraintMessage,
+    isTransactionBlocked,
   ]);
 
   const actionLabels: Record<TradeAction, string> = {
@@ -406,11 +431,28 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
       <div className="space-y-4 p-5">
         {/* Position constraint warning */}
         {constraintMessage && (
-          <div className="flex items-start gap-2 rounded-xl bg-yellow-500/8 px-3 py-2.5 ring-1 ring-inset ring-yellow-500/20">
-            <svg className="mt-0.5 h-4 w-4 shrink-0 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-            </svg>
-            <span className="text-xs text-yellow-400">{constraintMessage}</span>
+          <div className="space-y-2.5 rounded-xl bg-yellow-500/8 px-4 py-3.5 ring-1 ring-inset ring-yellow-500/20">
+            <div className="flex items-start gap-2">
+              <svg className="mt-0.5 h-4 w-4 shrink-0 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+              </svg>
+              <span className="text-xs font-semibold text-yellow-400">{constraintMessage.title}</span>
+            </div>
+            <p className="text-xs leading-relaxed text-yellow-400/80">
+              {constraintMessage.explanation}
+            </p>
+            <div className="flex items-center gap-2 rounded-lg bg-yellow-500/10 px-3 py-2">
+              <svg className="h-3.5 w-3.5 shrink-0 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+              </svg>
+              <span className="text-xs text-yellow-400">{constraintMessage.guidance}</span>
+            </div>
+            <button
+              onClick={() => setAction(constraintMessage.guidanceAction)}
+              className="w-full rounded-lg bg-yellow-500/20 py-2 text-xs font-bold text-yellow-400 transition-colors hover:bg-yellow-500/30"
+            >
+              Go to {actionLabels[constraintMessage.guidanceAction]} &rarr;
+            </button>
           </div>
         )}
 
@@ -566,7 +608,7 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
         {/* Submit */}
         <button
           onClick={executeTrade}
-          disabled={loading || !publicKey || market.settled || !!constraintMessage}
+          disabled={loading || !publicKey || market.settled || isTransactionBlocked()}
           className={`w-full rounded-xl py-3.5 text-sm font-bold text-white shadow-lg transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none ${actionColors[action]}`}
         >
           {loading ? (
@@ -593,8 +635,8 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
             "Connect Wallet to Trade"
           ) : market.settled ? (
             "Market Settled"
-          ) : constraintMessage ? (
-            "Position Constraint"
+          ) : isTransactionBlocked() ? (
+            "Sell Existing Position First"
           ) : (
             actionLabels[action]
           )}
