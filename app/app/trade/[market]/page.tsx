@@ -16,8 +16,8 @@ import {
   priceToPercent,
 } from "@/lib/utils";
 import { MAG7_TICKERS } from "@/lib/constants";
-import type { Meridian } from "../../../../target/types/meridian";
-import idl from "../../../../target/idl/meridian.json";
+import type { Meridian } from "@/lib/idl/meridian";
+import idl from "@/lib/idl/meridian.json";
 
 export default function TradePage({
   params,

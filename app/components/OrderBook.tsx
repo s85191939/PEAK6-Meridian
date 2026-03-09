@@ -6,8 +6,8 @@ import { PublicKey } from "@solana/web3.js";
 import { Program, AnchorProvider, BN } from "@coral-xyz/anchor";
 import { findOrderbookPda, priceToPercent } from "@/lib/utils";
 import { PRICE_DECIMALS } from "@/lib/constants";
-import type { Meridian } from "../../target/types/meridian";
-import idl from "../../target/idl/meridian.json";
+import type { Meridian } from "@/lib/idl/meridian";
+import idl from "@/lib/idl/meridian.json";
 
 interface Order {
   orderId: BN;

@@ -17,8 +17,8 @@ import {
   explorerUrl,
 } from "@/lib/utils";
 import { MAG7_TICKERS } from "@/lib/constants";
-import type { Meridian } from "../../target/types/meridian";
-import idl from "../../target/idl/meridian.json";
+import type { Meridian } from "@/lib/idl/meridian";
+import idl from "@/lib/idl/meridian.json";
 
 interface Position {
   marketPubkey: PublicKey;
@@ -88,62 +88,58 @@ export default function PortfolioView() {
 
       const marketPubkeys = registryAccount.markets as PublicKey[];
 
-      // Fetch all markets in parallel
-      const marketResults = await Promise.allSettled(
-        marketPubkeys.map((pda) => program.account.market.fetch(pda))
-      );
+      // Batch fetch ALL markets in 1 RPC call
+      const marketAccounts = await program.account.market.fetchMultiple(marketPubkeys);
+
+      // Derive all token ATAs for the user (Yes + No for each market)
+      const atas: PublicKey[] = [];
+      const ataMap: { index: number; type: "yes" | "no" }[] = [];
+
+      for (let i = 0; i < marketPubkeys.length; i++) {
+        const market = marketAccounts[i];
+        if (!market) continue;
+
+        const yesAta = await getAssociatedTokenAddress(market.yesMint as PublicKey, publicKey);
+        const noAta = await getAssociatedTokenAddress(market.noMint as PublicKey, publicKey);
+        atas.push(yesAta, noAta);
+        ataMap.push({ index: i, type: "yes" }, { index: i, type: "no" });
+      }
+
+      // Batch fetch ALL token balances in 1 RPC call
+      const ataInfos = await connection.getMultipleAccountsInfo(atas);
+
+      // Parse balances and build positions
+      const balances = new Map<number, { yesBalance: BN; noBalance: BN }>();
+      for (let j = 0; j < ataInfos.length; j++) {
+        const info = ataInfos[j];
+        const { index, type } = ataMap[j];
+        if (!balances.has(index)) {
+          balances.set(index, { yesBalance: new BN(0), noBalance: new BN(0) });
+        }
+        if (info && info.data.length >= 72) {
+          // SPL Token account: amount is at offset 64, 8 bytes LE
+          const amount = new BN(info.data.subarray(64, 72), "le");
+          if (type === "yes") balances.get(index)!.yesBalance = amount;
+          else balances.get(index)!.noBalance = amount;
+        }
+      }
 
       const userPositions: Position[] = [];
-
-      // For each market, check token balances in parallel
-      const balanceChecks = marketPubkeys.map(async (marketPda, index) => {
-        const result = marketResults[index];
-        if (result.status !== "fulfilled") return null;
-
-        const market = result.value;
-        const yesMint = market.yesMint as PublicKey;
-        const noMint = market.noMint as PublicKey;
-
-        const [userYesAta, userNoAta] = await Promise.all([
-          getAssociatedTokenAddress(yesMint, publicKey),
-          getAssociatedTokenAddress(noMint, publicKey),
-        ]);
-
-        const [yesResult, noResult] = await Promise.allSettled([
-          connection.getTokenAccountBalance(userYesAta),
-          connection.getTokenAccountBalance(userNoAta),
-        ]);
-
-        const yesBalance =
-          yesResult.status === "fulfilled"
-            ? new BN(yesResult.value.value.amount)
-            : new BN(0);
-        const noBalance =
-          noResult.status === "fulfilled"
-            ? new BN(noResult.value.value.amount)
-            : new BN(0);
-
-        if (yesBalance.gt(new BN(0)) || noBalance.gt(new BN(0))) {
-          return {
-            marketPubkey: marketPda,
+      for (const [i, bal] of balances.entries()) {
+        if (bal.yesBalance.gt(new BN(0)) || bal.noBalance.gt(new BN(0))) {
+          const market = marketAccounts[i]!;
+          userPositions.push({
+            marketPubkey: marketPubkeys[i],
             ticker: market.ticker as string,
             strikePrice: market.strikePrice as BN,
             date: market.date as number,
             settled: market.settled as boolean,
             outcomeYesWins: market.outcomeYesWins as boolean,
-            yesBalance,
-            noBalance,
-            yesMint,
-            noMint,
-          };
-        }
-        return null;
-      });
-
-      const results = await Promise.allSettled(balanceChecks);
-      for (const r of results) {
-        if (r.status === "fulfilled" && r.value) {
-          userPositions.push(r.value);
+            yesBalance: bal.yesBalance,
+            noBalance: bal.noBalance,
+            yesMint: market.yesMint as PublicKey,
+            noMint: market.noMint as PublicKey,
+          });
         }
       }
 

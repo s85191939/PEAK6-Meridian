@@ -15,8 +15,8 @@ import {
   explorerUrl,
 } from "@/lib/utils";
 import { MAG7_TICKERS, PRICE_DECIMALS } from "@/lib/constants";
-import type { Meridian } from "../../../target/types/meridian";
-import idl from "../../../target/idl/meridian.json";
+import type { Meridian } from "@/lib/idl/meridian";
+import idl from "@/lib/idl/meridian.json";
 
 interface HistoryEntry {
   marketPubkey: PublicKey;

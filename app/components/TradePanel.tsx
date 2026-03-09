@@ -23,8 +23,8 @@ import {
   parseSolanaError,
   explorerUrl,
 } from "@/lib/utils";
-import type { Meridian } from "../../target/types/meridian";
-import idl from "../../target/idl/meridian.json";
+import type { Meridian } from "@/lib/idl/meridian";
+import idl from "@/lib/idl/meridian.json";
 
 type TradeAction = "buy_yes" | "buy_no" | "sell_yes" | "sell_no";
 
@@ -96,23 +96,15 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
     fetchBalances();
   }, [publicKey, market.yesMint, market.noMint, connection]);
 
-  // Position constraints: if user holds Yes, can't buy No (and vice versa)
+  // Track positions for display (no longer block opposing trades)
   const hasYesPosition = yesBalance.gt(new BN(0));
   const hasNoPosition = noBalance.gt(new BN(0));
 
-  const isActionDisabled = (a: TradeAction): boolean => {
-    if (hasYesPosition && (a === "buy_no")) return true;
-    if (hasNoPosition && (a === "buy_yes")) return true;
+  const isActionDisabled = (_a: TradeAction): boolean => {
     return false;
   };
 
   const getConstraintMessage = (): string | null => {
-    if (hasYesPosition && action === "buy_no") {
-      return "You hold Yes tokens. Sell your Yes position before buying No.";
-    }
-    if (hasNoPosition && action === "buy_yes") {
-      return "You hold No tokens. Sell your No position before buying Yes.";
-    }
     return null;
   };
 

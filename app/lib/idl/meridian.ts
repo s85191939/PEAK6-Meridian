@@ -1,0 +1,979 @@
+/**
+ * Program IDL in camelCase format in order to be used in JS/TS.
+ *
+ * Note that this is only a type helper and is not the actual IDL. The original
+ * pointy IDL can be found at `target/idl/meridian.json`.
+ */
+export type Meridian = {
+  "address": "2zchyfx482vagebbGJ2ePq8AuuafwS1Hc6YoSkgAfTe1",
+  "metadata": {
+    "name": "meridian",
+    "version": "0.1.0",
+    "spec": "0.1.0"
+  },
+  "instructions": [
+    {
+      "name": "initialize",
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "usdcMint",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "initRegistry",
+      "discriminator": [
+        131,
+        22,
+        4,
+        103,
+        24,
+        94,
+        163,
+        239
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "marketRegistry",
+          "writable": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "registerMarket",
+      "discriminator": [
+        24,
+        163,
+        183,
+        185,
+        145,
+        243,
+        36,
+        146
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "marketRegistry",
+          "writable": true
+        },
+        {
+          "name": "market"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "createMarket",
+      "discriminator": [
+        103,
+        226,
+        97,
+        235,
+        200,
+        188,
+        251,
+        254
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "yesMint",
+          "writable": true
+        },
+        {
+          "name": "noMint",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "ticker",
+          "type": "string"
+        },
+        {
+          "name": "strikePrice",
+          "type": "u64"
+        },
+        {
+          "name": "date",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "initOrderbook",
+      "discriminator": [
+        88,
+        219,
+        21,
+        58,
+        209,
+        13,
+        138,
+        74
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "orderbook",
+          "writable": true
+        },
+        {
+          "name": "usdcMint"
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initEscrowYes",
+      "discriminator": [
+        104,
+        111,
+        56,
+        122,
+        226,
+        52,
+        197,
+        4
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "escrowYes",
+          "writable": true
+        },
+        {
+          "name": "yesMint"
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initBidEscrow",
+      "discriminator": [
+        112,
+        242,
+        27,
+        122,
+        230,
+        127,
+        128,
+        53
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "bidEscrow",
+          "writable": true
+        },
+        {
+          "name": "usdcMint"
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "mintPair",
+      "discriminator": [
+        19,
+        149,
+        94,
+        110,
+        181,
+        186,
+        33,
+        107
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "yesMint",
+          "writable": true
+        },
+        {
+          "name": "noMint",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "userUsdc",
+          "writable": true
+        },
+        {
+          "name": "userYes",
+          "writable": true
+        },
+        {
+          "name": "userNo",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "mergePair",
+      "discriminator": [
+        30,
+        61,
+        163,
+        68,
+        40,
+        68,
+        160,
+        222
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "yesMint",
+          "writable": true
+        },
+        {
+          "name": "noMint",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "userUsdc",
+          "writable": true
+        },
+        {
+          "name": "userYes",
+          "writable": true
+        },
+        {
+          "name": "userNo",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "placeOrder",
+      "discriminator": [
+        51,
+        194,
+        155,
+        175,
+        109,
+        130,
+        96,
+        106
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market"
+        },
+        {
+          "name": "orderbook",
+          "writable": true
+        },
+        {
+          "name": "bidEscrow",
+          "writable": true
+        },
+        {
+          "name": "escrowYes",
+          "writable": true
+        },
+        {
+          "name": "userUsdc",
+          "writable": true
+        },
+        {
+          "name": "userYes",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "isBid",
+          "type": "bool"
+        },
+        {
+          "name": "price",
+          "type": "u64"
+        },
+        {
+          "name": "quantity",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "cancelOrder",
+      "discriminator": [
+        95,
+        129,
+        237,
+        240,
+        8,
+        49,
+        223,
+        132
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market"
+        },
+        {
+          "name": "orderbook",
+          "writable": true
+        },
+        {
+          "name": "bidEscrow",
+          "writable": true
+        },
+        {
+          "name": "escrowYes",
+          "writable": true
+        },
+        {
+          "name": "userUsdc",
+          "writable": true
+        },
+        {
+          "name": "userYes",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "orderId",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "settleMarket",
+      "discriminator": [
+        193,
+        153,
+        95,
+        216,
+        166,
+        6,
+        144,
+        217
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "market",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "settlementPrice",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "redeem",
+      "discriminator": [
+        184,
+        12,
+        86,
+        149,
+        70,
+        196,
+        97,
+        225
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market"
+        },
+        {
+          "name": "tokenMint",
+          "writable": true
+        },
+        {
+          "name": "userToken",
+          "writable": true
+        },
+        {
+          "name": "userUsdc",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
+      "name": "market",
+      "discriminator": [
+        219,
+        190,
+        213,
+        55,
+        0,
+        227,
+        198,
+        154
+      ]
+    },
+    {
+      "name": "marketRegistry",
+      "discriminator": [
+        200,
+        118,
+        217,
+        126,
+        179,
+        169,
+        172,
+        104
+      ]
+    },
+    {
+      "name": "orderBook",
+      "discriminator": [
+        55,
+        230,
+        125,
+        218,
+        149,
+        39,
+        65,
+        248
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "unauthorized",
+      "msg": "Only the admin can perform this action"
+    },
+    {
+      "code": 6001,
+      "name": "marketAlreadySettled",
+      "msg": "Market has already been settled"
+    },
+    {
+      "code": 6002,
+      "name": "marketNotSettled",
+      "msg": "Market has not been settled yet"
+    },
+    {
+      "code": 6003,
+      "name": "invalidStrikePrice",
+      "msg": "Invalid strike price"
+    },
+    {
+      "code": 6004,
+      "name": "invalidTicker",
+      "msg": "Ticker must be 1-8 characters"
+    },
+    {
+      "code": 6005,
+      "name": "orderBookFull",
+      "msg": "Order book is full"
+    },
+    {
+      "code": 6006,
+      "name": "invalidOrderPrice",
+      "msg": "Invalid order price"
+    },
+    {
+      "code": 6007,
+      "name": "invalidOrderQuantity",
+      "msg": "Invalid order quantity"
+    },
+    {
+      "code": 6008,
+      "name": "orderNotFound",
+      "msg": "Order not found"
+    },
+    {
+      "code": 6009,
+      "name": "notOrderOwner",
+      "msg": "Cannot cancel another user's order"
+    },
+    {
+      "code": 6010,
+      "name": "insufficientBalance",
+      "msg": "Insufficient token balance"
+    },
+    {
+      "code": 6011,
+      "name": "noTokensToRedeem",
+      "msg": "No tokens to redeem"
+    },
+    {
+      "code": 6012,
+      "name": "stalePriceData",
+      "msg": "Oracle price is stale"
+    },
+    {
+      "code": 6013,
+      "name": "lowConfidencePrice",
+      "msg": "Oracle confidence interval too wide"
+    },
+    {
+      "code": 6014,
+      "name": "tooEarlyToSettle",
+      "msg": "Settlement can only occur after market close"
+    },
+    {
+      "code": 6015,
+      "name": "vaultInvariantViolated",
+      "msg": "Vault balance invariant violated"
+    },
+    {
+      "code": 6016,
+      "name": "mathOverflow",
+      "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6017,
+      "name": "invalidTokenMint",
+      "msg": "Invalid token mint — must be yes_mint or no_mint"
+    },
+    {
+      "code": 6018,
+      "name": "registryFull",
+      "msg": "Market registry is full"
+    }
+  ],
+  "types": [
+    {
+      "name": "config",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdcMint",
+            "type": "pubkey"
+          },
+          {
+            "name": "marketCount",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "market",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "config",
+            "type": "pubkey"
+          },
+          {
+            "name": "marketId",
+            "type": "u64"
+          },
+          {
+            "name": "ticker",
+            "type": "string"
+          },
+          {
+            "name": "strikePrice",
+            "type": "u64"
+          },
+          {
+            "name": "date",
+            "type": "u32"
+          },
+          {
+            "name": "yesMint",
+            "type": "pubkey"
+          },
+          {
+            "name": "noMint",
+            "type": "pubkey"
+          },
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "totalPairsMinted",
+            "type": "u64"
+          },
+          {
+            "name": "settled",
+            "type": "bool"
+          },
+          {
+            "name": "outcomeYesWins",
+            "type": "bool"
+          },
+          {
+            "name": "settlementPrice",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "yesMintBump",
+            "type": "u8"
+          },
+          {
+            "name": "noMintBump",
+            "type": "u8"
+          },
+          {
+            "name": "vaultBump",
+            "type": "u8"
+          },
+          {
+            "name": "escrowYesBump",
+            "type": "u8"
+          },
+          {
+            "name": "bidEscrowBump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "marketRegistry",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "markets",
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "orderBook",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "orderCount",
+            "type": "u64"
+          },
+          {
+            "name": "orders",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "order"
+                }
+              }
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "order",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "orderId",
+            "type": "u64"
+          },
+          {
+            "name": "maker",
+            "type": "pubkey"
+          },
+          {
+            "name": "isBid",
+            "type": "bool"
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          },
+          {
+            "name": "quantity",
+            "type": "u64"
+          },
+          {
+            "name": "filled",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "cancelled",
+            "type": "bool"
+          }
+        ]
+      }
+    }
+  ]
+};

@@ -1,7 +1,11 @@
 .PHONY: install build test dev frontend demo deploy clean
 
 # Ensure Solana / Anchor / Cargo are on PATH
-export PATH := $(HOME)/.local/share/solana/install/active_release/bin:$(HOME)/.cargo/bin:$(PATH)
+export PATH := $(HOME)/.cargo/bin:$(HOME)/.local/share/solana/install/active_release/bin:$(HOME)/.avm/bin:$(PATH)
+
+# Resolve anchor binary (cargo bin takes precedence over avm)
+ANCHOR := $(HOME)/.cargo/bin/anchor
+SOLANA := $(HOME)/.local/share/solana/install/active_release/bin/solana
 
 # Anchor / Solana env defaults (devnet)
 export ANCHOR_PROVIDER_URL ?= https://api.devnet.solana.com
@@ -19,11 +23,11 @@ install:
 
 # Build the Solana program (skip IDL gen due to Rust 1.94 incompatibility with anchor-syn)
 build:
-	anchor build --no-idl
+	$(ANCHOR) build --no-idl
 
 # Run all 23 integration tests on local validator
 test:
-	anchor test --skip-build
+	$(ANCHOR) test --skip-build
 
 # Start the Next.js frontend (http://localhost:3000)
 frontend:
@@ -56,8 +60,8 @@ demo-devnet:
 
 # Deploy program to Solana devnet
 deploy:
-	solana config set --url devnet
-	solana program deploy target/deploy/meridian.so --program-id target/deploy/meridian-keypair.json --url devnet
+	$(SOLANA) config set --url devnet
+	$(SOLANA) program deploy target/deploy/meridian.so --program-id target/deploy/meridian-keypair.json --url devnet
 
 # Create markets on devnet
 create-markets:
@@ -73,5 +77,5 @@ build-frontend:
 
 # Clean build artifacts
 clean:
-	anchor clean
+	$(ANCHOR) clean
 	rm -rf app/.next app/out

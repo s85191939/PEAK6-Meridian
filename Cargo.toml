@@ -4,6 +4,10 @@ members = [
 ]
 resolver = "2"
 
+# Pin crates that require edition2024 (incompatible with Solana's Cargo 1.79)
+[workspace.dependencies]
+constant_time_eq = "=0.3.1"
+
 [profile.release]
 overflow-checks = true
 lto = "fat"

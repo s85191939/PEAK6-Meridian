@@ -9,8 +9,8 @@ import {
   findMarketRegistryPda,
   findOrderbookPda,
 } from "@/lib/utils";
-import type { Meridian } from "../../../target/types/meridian";
-import idl from "../../../target/idl/meridian.json";
+import type { Meridian } from "@/lib/idl/meridian";
+import idl from "@/lib/idl/meridian.json";
 
 export default function MarketsPage() {
   const { connection } = useConnection();
@@ -46,40 +46,33 @@ export default function MarketsPage() {
 
       const marketPubkeys = registryAccount.markets as PublicKey[];
 
-      // Fetch all markets in parallel
-      const marketResults = await Promise.allSettled(
-        marketPubkeys.map((pda) => program.account.market.fetch(pda))
-      );
+      // Batch fetch ALL markets in 1 RPC call (instead of N individual calls)
+      const marketAccounts = await program.account.market.fetchMultiple(marketPubkeys);
 
-      // Fetch all orderbooks in parallel
-      const orderbookResults = await Promise.allSettled(
-        marketPubkeys.map((pda) => {
-          const [orderbookPda] = findOrderbookPda(pda);
-          return program.account.orderBook.fetch(orderbookPda);
-        })
-      );
+      // Batch fetch ALL orderbooks in 1 RPC call
+      const orderbookPdas = marketPubkeys.map((pda) => findOrderbookPda(pda)[0]);
+      const orderbookAccounts = await program.account.orderBook.fetchMultiple(orderbookPdas);
+
+      interface OrderData {
+        isBid: boolean;
+        cancelled: boolean;
+        quantity: BN;
+        filled: BN;
+        price: BN;
+      }
 
       const marketsList: MarketData[] = [];
 
       for (let i = 0; i < marketPubkeys.length; i++) {
-        const marketResult = marketResults[i];
-        if (marketResult.status !== "fulfilled") continue;
+        const market = marketAccounts[i];
+        if (!market) continue;
 
-        const market = marketResult.value;
         let bestBid: BN | null = null;
         let bestAsk: BN | null = null;
 
-        const orderbookResult = orderbookResults[i];
-        if (orderbookResult.status === "fulfilled") {
-          interface OrderData {
-            isBid: boolean;
-            cancelled: boolean;
-            quantity: BN;
-            filled: BN;
-            price: BN;
-          }
-
-          const activeOrders = (orderbookResult.value.orders as OrderData[]).filter(
+        const orderbook = orderbookAccounts[i];
+        if (orderbook) {
+          const activeOrders = (orderbook.orders as OrderData[]).filter(
             (o: OrderData) =>
               !o.cancelled && (o.quantity as BN).sub(o.filled as BN).gt(new BN(0))
           );
