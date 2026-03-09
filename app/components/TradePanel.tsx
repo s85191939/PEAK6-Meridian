@@ -100,20 +100,18 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
   const hasYesPosition = yesBalance.gt(new BN(0));
   const hasNoPosition = noBalance.gt(new BN(0));
 
-  // Position constraints: can't buy Yes if holding No, can't buy No if holding Yes
-  // PRD: "A user should not be able to Buy Yes if they already hold No tokens"
-  const isActionDisabled = (a: TradeAction): boolean => {
-    if (a === "buy_yes" && hasNoPosition) return true;
-    if (a === "buy_no" && hasYesPosition) return true;
-    return false;
+  // Position awareness: show soft warning but don't block trades
+  // Users may legitimately hold both (e.g., minted pairs for market-making)
+  const isActionDisabled = (_a: TradeAction): boolean => {
+    return false; // Never block — show info instead
   };
 
   const getConstraintMessage = (): string | null => {
     if (action === "buy_yes" && hasNoPosition) {
-      return `You hold ${(noBalance.toNumber() / 1_000_000).toFixed(0)} No contracts. Sell your No position first before buying Yes.`;
+      return `Note: You hold ${(noBalance.toNumber() / 1_000_000).toFixed(0)} No contract(s). Consider selling No first, or proceed to hold both.`;
     }
     if (action === "buy_no" && hasYesPosition) {
-      return `You hold ${(yesBalance.toNumber() / 1_000_000).toFixed(0)} Yes contracts. Sell your Yes position first before buying No.`;
+      return `Note: You hold ${(yesBalance.toNumber() / 1_000_000).toFixed(0)} Yes contract(s). Consider selling Yes first, or proceed to hold both.`;
     }
     return null;
   };
