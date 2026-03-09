@@ -10,7 +10,7 @@ Meridian is a binary stock outcome prediction market built on Solana devnet. It 
 - **Next.js 16 frontend** (React 19, Tailwind CSS 4, App Router) at `app/`
 - **TypeScript automation scripts** at `scripts/`
 - **Integration tests** (23 passing) at `tests/meridian.ts`
-- **16 smart contract instructions** (see full list below)
+- **17 smart contract instructions** (see full list below)
 - **Single YES orderbook design** -- No price = $1 - Yes price (Polymarket convention)
 - **$1.00 invariant**: vault holds exactly `$1 x total_pairs_minted` at all times
 - **Three separate escrow accounts**: vault (mint/merge/redeem only), bid_escrow (USDC for bids), escrow_yes (Yes tokens for asks)
@@ -49,7 +49,7 @@ ANCHOR := $(HOME)/.cargo/bin/anchor
 SOLANA := $(HOME)/.local/share/solana/install/active_release/bin/solana
 ```
 
-## Smart Contract Instructions (16 total)
+## Smart Contract Instructions (17 total)
 
 | Instruction | Description | Who |
 |-------------|-------------|-----|
@@ -65,7 +65,8 @@ SOLANA := $(HOME)/.local/share/solana/install/active_release/bin/solana
 | `merge_pair` | 1 Yes + 1 No -> $1 USDC (pre-settlement exit) | Any user |
 | `place_order` | Post limit order (bid/ask) with match-at-place | Any user |
 | `cancel_order` | Cancel order + return collateral from escrow | Order owner |
-| `settle_market` | Set outcome, immutable once set | Admin |
+| `settle_market` | Set outcome, immutable once set (requires market close time) | Admin |
+| `admin_settle_override` | Emergency settle with 1-hour delay after close (5 PM ET) | Admin |
 | `redeem` | Burn winning tokens -> USDC (validates token_mint) | Any user |
 | `pause` | Emergency pause -- blocks minting, trading, merging | Admin |
 | `unpause` | Resume protocol operations | Admin |
@@ -115,7 +116,7 @@ Defined in `programs/meridian/src/errors.rs`: Unauthorized, MarketAlreadySettled
 | Escrow Design | Separate vault + bid_escrow + escrow_yes | Isolates $1.00 invariant from order collateral |
 | CLOB Implementation | Vec<Order> with 64 max slots, linear scan matching | Simple for MVP; production would use heap/tree |
 | Market Discovery | On-chain MarketRegistry | Single source of truth, no off-chain state needed |
-| Oracle | Admin-submitted price (MVP) | Production would use Pyth Network (PEAK6 is a Pyth validator) |
+| Oracle | Pyth Network (primary) + Yahoo Finance (fallback) | PEAK6 is a Pyth validator; real institutional prices from 120+ publishers |
 | USDC | Mock SPL token (own mint, not Circle USDC) | Devnet-only, faucet mints tokens |
 | Frontend | Next.js 16 (App Router) + Tailwind CSS 4 | File-based dynamic routes (`/trade/[market]`), server components |
 | Admin faucet | Admin keypair embedded client-side in UsdcFaucet | Devnet convenience only |
@@ -161,6 +162,8 @@ PEAK6/
       trade/[market]/page.tsx  # Trading page (dynamic route)
       portfolio/page.tsx    # User portfolio
       history/page.tsx      # Trade history
+      api/create-markets/route.ts  # Vercel cron: morning market creation
+      api/settle-markets/route.ts  # Vercel cron: 4 PM Pyth settlement
     components/
       Navbar.tsx            # Navigation bar
       WalletProvider.tsx    # Solana wallet adapter setup
@@ -206,20 +209,50 @@ The frontend uses `@solana/wallet-adapter-react`. Users must connect a Phantom/S
 - Settlement is admin-only via the `settle_market` instruction
 - Settlement is immutable -- once settled, cannot be changed (double-settlement prevented)
 - Outcome is binary: `outcome_yes_wins = true` if close >= strike, `false` otherwise
+- `admin_settle_override` instruction requires 1-hour delay after market close (5 PM ET)
+- Smart contract validates: `clock.unix_timestamp >= market_close_timestamp(date)` for normal settle
+- Smart contract validates: `clock.unix_timestamp >= market_close_timestamp(date) + 3600` for admin override
 
 ### Daily Lifecycle
-| Time | Event | Script |
-|------|-------|--------|
-| 8:00 AM ET | Read previous close, calculate strikes | `create-markets.ts` |
-| 8:30 AM ET | Create contracts and order books | `create-markets.ts` |
+| Time | Event | Script/API |
+|------|-------|------------|
+| 8:00 AM ET | Read previous close, calculate strikes | `POST /api/create-markets` |
+| 8:30 AM ET | Create contracts and order books | `POST /api/create-markets` |
 | 9:00 AM ET | Markets visible on frontend | -- |
 | 9:30 AM ET | US market open, trading begins | `seed-orders.ts` (optional) |
 | 4:00 PM ET | US market close | -- |
-| ~4:05 PM ET | Read closing price, settle all contracts | `settle-markets.ts` |
+| ~4:05 PM ET | Fetch Pyth prices, settle all contracts | `POST /api/settle-markets` |
 | 4:05 PM ET+ | Redemption enabled, winners claim USDC | -- |
 
-### Production Oracle Plan
-Production would use Pyth Network pull-oracle with staleness and confidence interval checks. PEAK6 is a Pyth validator, giving them a direct relationship with the oracle infrastructure.
+## Pyth Network Oracle Integration
+
+Meridian uses **Pyth Network** as the primary price oracle. PEAK6 is a Pyth validator, providing direct infrastructure relationship.
+
+### Oracle Hierarchy
+1. **PRIMARY**: Pyth Network via Hermes API (`https://hermes.pyth.network`)
+   - Fetches real stock prices from 120+ institutional data publishers
+   - Validates staleness (< 5 min) and confidence (< 1% of price)
+   - Price = `rawPrice * 10^exponent` (equities typically use expo = -5)
+2. **FALLBACK**: Yahoo Finance (only if Pyth unavailable)
+
+### Pyth Feed IDs (MAG7 US Equities)
+| Ticker | Feed ID |
+|--------|---------|
+| AAPL | `0x49f6b65cb1de6b10eaf75e7c03ca029c306d0357e91b5311b175084a5ad55688` |
+| MSFT | `0xd0ca23c1cc005e004ccf1db5bf76aeb6a49218f43dac3d4b275e92de12ded4d1` |
+| GOOGL | `0x5a48c03e9b9cb337801073ed9d166817473697efff0d138874e0f6a33d6d5aa6` |
+| AMZN | `0xb5d0e0fa58a1f8b81498ae670ce93c872d14434b72c364885d4fa1b257cbb07a` |
+| NVDA | `0xb1073854ed24cbc755dc527418f52b7d271f6cc967bbf8d8129112b18860a593` |
+| META | `0x78a3e3b8e676a8f73c439f5d749737034b139bbbe899ba5775216fba596607fe` |
+| TSLA | `0x16dad506d7db8da01c87581c87ca897a012a153557d4d578c3b9c9e1bc0632f1` |
+
+### API Routes (Vercel Serverless)
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/api/create-markets` | POST/GET | Morning market creation — fetches prev close, calculates strikes, creates 5 txs per market |
+| `/api/settle-markets` | POST/GET | 4:05 PM settlement — fetches Pyth prices, validates staleness/confidence, settles markets |
+
+Both routes are protected by `CRON_SECRET` env var (`Authorization: Bearer <secret>`).
 
 ## Frontend Deployment
 
