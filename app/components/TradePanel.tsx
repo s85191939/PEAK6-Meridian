@@ -150,15 +150,20 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
   const hasYesPosition = yesBalance.gt(new BN(0));
   const hasNoPosition = noBalance.gt(new BN(0));
 
-  // Position constraints per spec:
-  // - Holding No tokens OR resting asks (selling Yes = No side)? Can't buy Yes.
-  // - Holding Yes tokens OR resting bids (buying Yes)? Can't buy No.
-  // Resting orders lock collateral on one side, so we must check both tokens and orders.
-  // All tabs stay navigable so users can read explanations and find the right action.
-  // Only the submit button is disabled when a constraint applies.
+  // Position constraints — one side at a time.
+  //
+  // Block Buy Yes if: user holds No tokens (on the No side).
+  // Block Buy No  if: user holds Yes tokens, OR has resting bids without
+  //                   No tokens (bid is from Buy Yes, not Sell No exit).
+  // Block Sell Yes if: no Yes tokens in wallet.
+  // Block Sell No  if: no No tokens in wallet.
+  //
+  // Key nuance: resting bids from "Sell No" (exit) don't block Buy No,
+  // and resting asks from "Sell Yes" (exit) don't block Buy Yes.
+  // We distinguish by checking token holdings alongside order state.
   const isTransactionBlocked = (): boolean => {
-    if (action === "buy_yes" && (hasNoPosition || hasRestingAsks)) return true;
-    if (action === "buy_no" && (hasYesPosition || hasRestingBids)) return true;
+    if (action === "buy_yes" && hasNoPosition) return true;
+    if (action === "buy_no" && (hasYesPosition || (hasRestingBids && !hasNoPosition))) return true;
     // Can't sell tokens you don't hold
     if (action === "sell_yes" && !hasYesPosition) return true;
     if (action === "sell_no" && !hasNoPosition) return true;
@@ -180,31 +185,23 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
     if (action === "buy_yes" && hasNoPosition) {
       return {
         title: "You already hold a No position",
-        explanation: `You own ${noQty} No contract${noQty !== "1" ? "s" : ""} on this market. Each No contract is a bet that ${market.ticker} will close below the strike price. Buying Yes (the opposite bet) while holding No isn't allowed — it would create a conflicting position.`,
+        explanation: `You own ${noQty} No contract${noQty !== "1" ? "s" : ""} on this market. Buying Yes (the opposite bet) while holding No isn't allowed — it would create a conflicting position.`,
         guidance: `To switch sides, first sell your ${noQty} No contract${noQty !== "1" ? "s" : ""} using the "Sell No" tab. Once sold, you can buy Yes.`,
         guidanceAction: "sell_no",
-      };
-    }
-    if (action === "buy_yes" && hasRestingAsks) {
-      return {
-        title: "You have a pending sell order",
-        explanation: `You have an open ask (sell Yes) order on this market. This means you're already positioned on the No side. You can't buy Yes while you have a resting sell order.`,
-        guidance: `Wait for your sell order to fill, or cancel it first. Then you can buy Yes.`,
-        guidanceAction: "sell_yes",
       };
     }
     if (action === "buy_no" && hasYesPosition) {
       return {
         title: "You already hold a Yes position",
-        explanation: `You own ${yesQty} Yes contract${yesQty !== "1" ? "s" : ""} on this market. Each Yes contract is a bet that ${market.ticker} will close above the strike price. Buying No (the opposite bet) while holding Yes isn't allowed — it would create a conflicting position.`,
+        explanation: `You own ${yesQty} Yes contract${yesQty !== "1" ? "s" : ""} on this market. Buying No (the opposite bet) while holding Yes isn't allowed — it would create a conflicting position.`,
         guidance: `To switch sides, first sell your ${yesQty} Yes contract${yesQty !== "1" ? "s" : ""} using the "Sell Yes" tab. Once sold, you can buy No.`,
         guidanceAction: "sell_yes",
       };
     }
-    if (action === "buy_no" && hasRestingBids) {
+    if (action === "buy_no" && hasRestingBids && !hasNoPosition) {
       return {
-        title: "You have a pending buy order",
-        explanation: `You have an open bid (buy Yes) order on this market. This means you're already positioned on the Yes side. You can't buy No while you have a resting bid.`,
+        title: "You have a pending Buy Yes order",
+        explanation: `You have a resting bid for Yes tokens on this market. You can't buy No while committed to the Yes side.`,
         guidance: `Wait for your bid to fill, or cancel it first. Then you can buy No.`,
         guidanceAction: "buy_yes",
       };
