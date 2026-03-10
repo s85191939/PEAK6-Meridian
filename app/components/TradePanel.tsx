@@ -54,10 +54,14 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
   const isBuy = action === "buy_yes" || action === "buy_no";
   const isYes = action === "buy_yes" || action === "sell_yes";
 
-  const pricePercent = Math.min(99, Math.max(1, parseInt(priceInput) || 50));
-  const priceBn = percentToPrice(pricePercent);
-  const noPriceBn = computeNoPrice(priceBn);
-  const displayPrice = isYes ? priceBn : noPriceBn;
+  // Slider value always represents the price of the side you're trading.
+  // For Yes trades: slider = Yes price. For No trades: slider = No price.
+  const sliderPercent = Math.min(99, Math.max(1, parseInt(priceInput) || 50));
+  // Convert to Yes book price (the orderbook always deals in Yes tokens)
+  const yesBookPercent = isYes ? sliderPercent : (100 - sliderPercent);
+  const priceBn = percentToPrice(yesBookPercent);
+  // Display price matches the slider — always the traded side's price
+  const displayPrice = percentToPrice(sliderPercent);
 
   // Refresh counter — incremented after each trade to trigger balance refetch
   const [refreshCount, setRefreshCount] = useState(0);
@@ -137,6 +141,9 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
 
   useEffect(() => {
     fetchBalances();
+    // Poll every 5s so constraints update even without a trade
+    const interval = setInterval(fetchBalances, 5000);
+    return () => clearInterval(interval);
   }, [fetchBalances, refreshCount]);
 
   // Track positions: token balances + resting orders
@@ -390,16 +397,15 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
 
       // Descriptive success messages
       const qtyStr = qty.toFixed(0);
-      const priceStr = (pricePercent / 100).toFixed(2);
+      const sPrice = (sliderPercent / 100).toFixed(2);
       if (action === "buy_yes") {
-        setSuccess(`Bid placed: ${qtyStr} Yes contract${qty !== 1 ? "s" : ""} at $${priceStr} each. $${estimatedCost.toFixed(2)} USDC locked.`);
+        setSuccess(`Bid placed: ${qtyStr} Yes contract${qty !== 1 ? "s" : ""} at $${sPrice} each. $${estimatedCost.toFixed(2)} USDC locked.`);
       } else if (action === "buy_no") {
-        const noPriceStr = ((100 - pricePercent) / 100).toFixed(2);
-        setSuccess(`Minted ${qtyStr} pair${qty !== 1 ? "s" : ""} and listed Yes for sale. You hold ${qtyStr} No contract${qty !== 1 ? "s" : ""} (net cost ≈ $${noPriceStr} each if Yes sells).`);
+        setSuccess(`Minted ${qtyStr} pair${qty !== 1 ? "s" : ""} and listed Yes for sale. You hold ${qtyStr} No contract${qty !== 1 ? "s" : ""} (net cost ≈ $${sPrice} each if Yes sells).`);
       } else if (action === "sell_yes") {
-        setSuccess(`Ask placed: ${qtyStr} Yes contract${qty !== 1 ? "s" : ""} listed at $${priceStr} each.`);
+        setSuccess(`Ask placed: ${qtyStr} Yes contract${qty !== 1 ? "s" : ""} listed at $${sPrice} each.`);
       } else {
-        setSuccess(`Bid placed: ${qtyStr} Yes at $${priceStr} to close your No position.`);
+        setSuccess(`Sell No: bid for ${qtyStr} Yes at $${(yesBookPercent / 100).toFixed(2)} to close your No position.`);
       }
 
       setQuantityInput("");
@@ -417,6 +423,8 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
     quantityInput,
     action,
     priceBn,
+    sliderPercent,
+    yesBookPercent,
     isYes,
     market,
     getProgram,
@@ -449,45 +457,46 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
   };
 
   // Estimated cost/proceeds calculation
+  // sliderPercent always represents the traded side's price
   const qty = parseFloat(quantityInput) || 0;
   let estimatedCost: number;
   let costLabel: string;
   let upfrontCost: number | null = null; // Only for Buy No (mint pair costs $1 each)
 
   if (action === "buy_yes") {
-    // Simple bid: cost = price × quantity (locked in escrow)
-    estimatedCost = (pricePercent / 100) * qty;
+    estimatedCost = (sliderPercent / 100) * qty;
     costLabel = "Cost (locked in order)";
   } else if (action === "buy_no") {
-    // Mint pair ($1 each) + sell Yes at slider price
-    // Net cost = $1 - yesPrice = noPrice
-    const noPriceDecimal = (100 - pricePercent) / 100;
-    estimatedCost = noPriceDecimal * qty;
-    upfrontCost = 1.0 * qty; // Mint pair costs $1 each
+    // Slider = No price = net cost per contract
+    estimatedCost = (sliderPercent / 100) * qty;
+    upfrontCost = 1.0 * qty; // Mint pair costs $1 each upfront
     costLabel = "Net cost (if Yes sells)";
   } else if (action === "sell_yes") {
-    estimatedCost = (pricePercent / 100) * qty;
+    estimatedCost = (sliderPercent / 100) * qty;
     costLabel = "Estimated proceeds";
   } else {
-    estimatedCost = ((100 - pricePercent) / 100) * qty;
+    // Sell No: slider = No price = proceeds
+    estimatedCost = (sliderPercent / 100) * qty;
     costLabel = "Estimated proceeds";
   }
 
   // Payoff display
   const strikeStr = market.strikePrice.toNumber() / 100;
+  const sliderPriceStr = (sliderPercent / 100).toFixed(2);
+  const yesPriceStr = (yesBookPercent / 100).toFixed(2);
   const payoffText = (() => {
     if (!qty || qty <= 0) return null;
     const cost = estimatedCost.toFixed(2);
     if (action === "buy_yes") {
-      return `Your $${cost} is locked as a bid. If matched, you get ${qty} Yes contract${qty !== 1 ? 's' : ''}. Each pays $1.00 if ${market.ticker} closes above $${strikeStr.toFixed(2)}, $0.00 otherwise.`;
+      return `Your $${cost} is locked as a bid at $${sliderPriceStr} each. If matched, you get ${qty} Yes contract${qty !== 1 ? 's' : ''}. Each pays $1.00 if ${market.ticker} closes above $${strikeStr.toFixed(2)}, $0.00 otherwise.`;
     }
     if (action === "buy_no") {
-      return `Mints ${qty} pair${qty !== 1 ? 's' : ''} for $${(qty).toFixed(2)}, then lists your Yes tokens for sale at $${(pricePercent / 100).toFixed(2)} each. Net cost ≈ $${cost} if the Yes side sells. You keep the No contract${qty !== 1 ? 's' : ''} — each pays $1.00 if ${market.ticker} closes below $${strikeStr.toFixed(2)}.`;
+      return `Mints ${qty} pair${qty !== 1 ? 's' : ''} for $${(qty).toFixed(2)}, then sells Yes at $${yesPriceStr} each. Net cost ≈ $${sliderPriceStr} per No contract. Each pays $1.00 if ${market.ticker} closes below $${strikeStr.toFixed(2)}.`;
     }
     if (action === "sell_yes") {
-      return `Lists ${qty} Yes contract${qty !== 1 ? 's' : ''} for sale at $${(pricePercent / 100).toFixed(2)} each. You receive $${cost} when filled.`;
+      return `Lists ${qty} Yes contract${qty !== 1 ? 's' : ''} at $${sliderPriceStr} each. You receive $${cost} when filled.`;
     }
-    return `Places a bid for ${qty} Yes contract${qty !== 1 ? 's' : ''} at $${(pricePercent / 100).toFixed(2)}. When filled, merge with your No tokens to get $${qty.toFixed(2)} USDC back.`;
+    return `Bids for ${qty} Yes at $${yesPriceStr} each. When filled, merge with your No tokens to reclaim $${qty.toFixed(2)} USDC. Net proceeds ≈ $${sliderPriceStr} per No contract.`;
   })();
 
   const constraintMessage = getConstraintMessage();
@@ -562,21 +571,21 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
         {/* Price slider */}
         <div>
           <label className="mb-1 flex items-center justify-between text-sm text-gray-400">
-            <span>Your limit price</span>
+            <span>Your {isYes ? "Yes" : "No"} limit price</span>
             <span className="font-mono text-sm font-bold text-white">
-              {formatPrice(displayPrice)} ({isYes ? pricePercent : 100 - pricePercent}%)
+              {formatPrice(displayPrice)} ({sliderPercent}%)
             </span>
           </label>
           <p className="mb-3 text-[11px] text-gray-500">
             {isBuy
-              ? "The most you\u2019re willing to pay per contract. Your order waits in the book until someone matches it."
-              : "The least you\u2019re willing to accept per contract."}
+              ? `The most you\u2019re willing to pay per ${isYes ? "Yes" : "No"} contract. Your order waits in the book until someone matches it.`
+              : `The least you\u2019re willing to accept per ${isYes ? "Yes" : "No"} contract.`}
           </p>
           <input
             type="range"
             min={1}
             max={99}
-            value={pricePercent}
+            value={sliderPercent}
             onChange={(e) => setPriceInput(e.target.value)}
             className="h-2 w-full cursor-pointer"
           />
