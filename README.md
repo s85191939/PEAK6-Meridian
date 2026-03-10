@@ -47,10 +47,11 @@ There is no separate backend server. The **Solana program is the backend** — i
 - **`make demo`** — Runs `scripts/demo-lifecycle.ts` against the local validator: creates a market, mints pairs, places orders, settles, and redeems. One script, full lifecycle.
 - **`make deploy`** — Deploys the compiled program to Solana devnet so the frontend can interact with it live.
 
-## Devnet Deployment
+## Live Deployment
 
 | | |
 |---|---|
+| **Frontend** | [peak-6-meridian.vercel.app](https://peak-6-meridian.vercel.app) |
 | **Network** | Solana Devnet |
 | **Program ID** | `2zchyfx482vagebbGJ2ePq8AuuafwS1Hc6YoSkgAfTe1` |
 | **Explorer** | [View on Solana Explorer](https://explorer.solana.com/address/2zchyfx482vagebbGJ2ePq8AuuafwS1Hc6YoSkgAfTe1?cluster=devnet) |
@@ -168,7 +169,7 @@ Bid Escrow:      seeds = ["bid_escrow", market_key]     — bid collateral
 |----------|--------|-------------|-----------|
 | Blockchain | Solana (Anchor) | EVM L2 | Sub-second finality for order matching. PRD specifies Solana. |
 | Order Book | On-chain CLOB with matching | Phoenix DEX | Demonstrates deep understanding of matching mechanics. Production would integrate Phoenix for liquidity depth. |
-| Oracle | Admin-submitted price (MVP) | Pyth Network | Simulates oracle for demo. Production would use Pyth pull-oracle with staleness/confidence checks. PEAK6 is a Pyth validator. |
+| Oracle | Pyth Network (primary) + Yahoo Finance (fallback) | Admin-only | Pyth pull-oracle with staleness (<5 min) and confidence (<1%) checks. Yahoo Finance as backup. PEAK6 is a Pyth validator. |
 | No Token | Synthetic (via mint/merge) | Separate No book | Single book = no liquidity fragmentation. Same approach as Polymarket. |
 | Token Standard | SPL Token | Token-2022 | Simpler, better tooling. Token-2022 extensions not needed for binary tokens. |
 | Frontend | Next.js 14 (App Router) + Tailwind | Create-Solana-dApp / Vite | App Router gives file-based dynamic routes (`/trade/[market]`), server components for pre-rendering. Tailwind enables rapid iteration on trading UI with zero runtime CSS cost. |
@@ -266,11 +267,12 @@ Tests verify the full lifecycle: config → registry → create market → regis
 | ✅ Done | Frontend: registry-based market discovery | Implemented |
 | ✅ Done | Frontend: correct USDC account derivation | Implemented |
 | ✅ Done | 23 integration tests covering full lifecycle | Implemented |
-| Next | Pyth oracle integration (staleness + confidence checks) | Planned |
+| ✅ Done | Pyth oracle integration (staleness + confidence checks) | Implemented |
+| ✅ Done | Position constraints in UI (no simultaneous Yes+No) | Implemented |
+| ✅ Done | Admin settle override with time delay | Implemented |
+| ✅ Done | Automated market creation + settlement (Vercel crons) | Implemented |
 | Next | Phoenix DEX integration for production matching | Planned |
 | Next | Pause/unpause for emergency admin controls | Planned |
-| Next | Position constraints in UI (no simultaneous Yes+No) | Planned |
-| Later | Admin settle override with time delay | Planned |
 | Later | WebSocket subscriptions for real-time order book | Planned |
 | Later | Automated market-making algorithms | Planned |
 
