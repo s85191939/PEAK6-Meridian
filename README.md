@@ -44,8 +44,40 @@ There is no separate backend server. The **Solana program is the backend** — i
 
 - **`make test`** — Spins up a local Solana validator automatically, deploys the program, runs all 23 tests, then shuts down. This is the fastest way to verify everything works.
 - **`make frontend`** — Starts the Next.js UI on `localhost:3000`. It connects to Solana devnet by default (configurable in `app/lib/constants.ts`).
-- **`make demo`** — Runs `scripts/demo-lifecycle.ts` against the local validator: creates a market, mints pairs, places orders, settles, and redeems. One script, full lifecycle.
+- **`make demo`** — Full feature demo on local validator (see below).
 - **`make deploy`** — Deploys the compiled program to Solana devnet so the frontend can interact with it live.
+
+### `make demo`
+
+`make demo` does this:
+
+1. Kills any leftover validator from a previous run
+2. Starts a fresh `solana-test-validator` locally with the Meridian program preloaded
+3. Waits up to 15 seconds for it to be ready
+4. Runs `demo-lifecycle.ts` which demonstrates all 25 features:
+   * Creates 3 users (Alice the bull, Bob the bear, Charlie the market maker)
+   * Funds them each with $20 mock USDC
+   * Initializes the protocol (config + registry)
+   * Creates 2 markets: AAPL > $230 and TSLA > $350
+   * Charlie mints 10 pairs and posts liquidity
+   * Buy Yes — Alice buys Yes from Charlie's ask
+   * Sell Yes — Alice sells Yes, Bob takes it
+   * Buy No — Bob mints pairs + sells Yes (keeps No)
+   * Sell No — Bob buys Yes + merges with No
+   * Cancel order — Charlie cancels, gets collateral back
+   * Merge pairs — Charlie exits 2 positions early
+   * Pause/unpause — minting blocked while paused
+   * Add intraday strike — AAPL > $250 added mid-day
+   * Settlement — AAPL at $235.50 (Yes wins), TSLA at $340 (No wins)
+   * Stale price rejection — zero price blocked
+   * Settlement immutability — can't re-settle
+   * Admin override — time delay enforced (TooEarlyToSettle)
+   * Redemption — winners get $1 each, losers get $0
+   * P&L summary — net $0.00 across all users (zero-sum verified)
+   * Invariant — both vaults drain to $0 after all redeems
+5. Shuts down the validator
+
+Fully self-contained. No wallet needed, no devnet, no internet, works any time of day. Takes about 10 seconds.
 
 ## Live Deployment
 
