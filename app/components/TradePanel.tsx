@@ -47,6 +47,8 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
   // Position constraint state
   const [yesBalance, setYesBalance] = useState<BN>(new BN(0));
   const [noBalance, setNoBalance] = useState<BN>(new BN(0));
+  const [hasRestingBids, setHasRestingBids] = useState(false);
+  const [hasRestingAsks, setHasRestingAsks] = useState(false);
   const [balanceLoading, setBalanceLoading] = useState(false);
 
   const isBuy = action === "buy_yes" || action === "buy_no";
@@ -57,57 +59,99 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
   const noPriceBn = computeNoPrice(priceBn);
   const displayPrice = isYes ? priceBn : noPriceBn;
 
-  // Fetch user's token balances for position constraints
-  useEffect(() => {
-    async function fetchBalances() {
-      if (!publicKey) {
-        setYesBalance(new BN(0));
-        setNoBalance(new BN(0));
-        return;
-      }
-      setBalanceLoading(true);
-      try {
-        const [userYesAta, userNoAta] = await Promise.all([
-          getAssociatedTokenAddress(market.yesMint, publicKey),
-          getAssociatedTokenAddress(market.noMint, publicKey),
-        ]);
+  // Refresh counter — incremented after each trade to trigger balance refetch
+  const [refreshCount, setRefreshCount] = useState(0);
 
-        const [yesResult, noResult] = await Promise.allSettled([
-          connection.getTokenAccountBalance(userYesAta),
-          connection.getTokenAccountBalance(userNoAta),
-        ]);
-
-        setYesBalance(
-          yesResult.status === "fulfilled"
-            ? new BN(yesResult.value.value.amount)
-            : new BN(0)
-        );
-        setNoBalance(
-          noResult.status === "fulfilled"
-            ? new BN(noResult.value.value.amount)
-            : new BN(0)
-        );
-      } catch {
-        // Token accounts may not exist yet
-      } finally {
-        setBalanceLoading(false);
-      }
+  // Fetch user's token balances AND resting orders for position constraints
+  const fetchBalances = useCallback(async () => {
+    if (!publicKey) {
+      setYesBalance(new BN(0));
+      setNoBalance(new BN(0));
+      setHasRestingBids(false);
+      setHasRestingAsks(false);
+      return;
     }
-    fetchBalances();
-  }, [publicKey, market.yesMint, market.noMint, connection]);
+    setBalanceLoading(true);
+    try {
+      const [userYesAta, userNoAta] = await Promise.all([
+        getAssociatedTokenAddress(market.yesMint, publicKey),
+        getAssociatedTokenAddress(market.noMint, publicKey),
+      ]);
 
-  // Track positions for display (no longer block opposing trades)
+      // Fetch token balances + orderbook in parallel
+      const readProvider = new AnchorProvider(
+        connection,
+        {
+          publicKey: new PublicKey("11111111111111111111111111111111"),
+          signTransaction: async (tx) => tx,
+          signAllTransactions: async (txs) => txs,
+        },
+        { commitment: "confirmed" }
+      );
+      const readProgram = new Program<Meridian>(idl as Meridian, readProvider);
+      const [orderbookPda] = findOrderbookPda(market.publicKey);
+
+      const [yesResult, noResult, orderbookResult] = await Promise.allSettled([
+        connection.getTokenAccountBalance(userYesAta),
+        connection.getTokenAccountBalance(userNoAta),
+        readProgram.account.orderBook.fetch(orderbookPda),
+      ]);
+
+      setYesBalance(
+        yesResult.status === "fulfilled"
+          ? new BN(yesResult.value.value.amount)
+          : new BN(0)
+      );
+      setNoBalance(
+        noResult.status === "fulfilled"
+          ? new BN(noResult.value.value.amount)
+          : new BN(0)
+      );
+
+      // Check for user's resting orders on the book
+      if (orderbookResult.status === "fulfilled") {
+        const orders = orderbookResult.value.orders as {
+          maker: PublicKey;
+          isBid: boolean;
+          quantity: BN;
+          filled: BN;
+          cancelled: boolean;
+        }[];
+        const userOrders = orders.filter(
+          (o) => !o.cancelled
+            && (o.quantity as BN).sub(o.filled as BN).gt(new BN(0))
+            && (o.maker as PublicKey).equals(publicKey)
+        );
+        setHasRestingBids(userOrders.some((o) => o.isBid));
+        setHasRestingAsks(userOrders.some((o) => !o.isBid));
+      } else {
+        setHasRestingBids(false);
+        setHasRestingAsks(false);
+      }
+    } catch {
+      // Token accounts may not exist yet
+    } finally {
+      setBalanceLoading(false);
+    }
+  }, [publicKey, market.yesMint, market.noMint, market.publicKey, connection]);
+
+  useEffect(() => {
+    fetchBalances();
+  }, [fetchBalances, refreshCount]);
+
+  // Track positions: token balances + resting orders
   const hasYesPosition = yesBalance.gt(new BN(0));
   const hasNoPosition = noBalance.gt(new BN(0));
 
   // Position constraints per spec:
-  // - Holding No? Can't buy Yes (sell your No first)
-  // - Holding Yes? Can't buy No (sell your Yes first)
+  // - Holding No tokens OR resting asks (selling Yes = No side)? Can't buy Yes.
+  // - Holding Yes tokens OR resting bids (buying Yes)? Can't buy No.
+  // Resting orders lock collateral on one side, so we must check both tokens and orders.
   // All tabs stay navigable so users can read explanations and find the right action.
   // Only the submit button is disabled when a constraint applies.
   const isTransactionBlocked = (): boolean => {
-    if (action === "buy_yes" && hasNoPosition) return true;
-    if (action === "buy_no" && hasYesPosition) return true;
+    if (action === "buy_yes" && (hasNoPosition || hasRestingAsks)) return true;
+    if (action === "buy_no" && (hasYesPosition || hasRestingBids)) return true;
     return false;
   };
 
@@ -131,12 +175,28 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
         guidanceAction: "sell_no",
       };
     }
+    if (action === "buy_yes" && hasRestingAsks) {
+      return {
+        title: "You have a pending sell order",
+        explanation: `You have an open ask (sell Yes) order on this market. This means you're already positioned on the No side. You can't buy Yes while you have a resting sell order.`,
+        guidance: `Wait for your sell order to fill, or cancel it first. Then you can buy Yes.`,
+        guidanceAction: "sell_yes",
+      };
+    }
     if (action === "buy_no" && hasYesPosition) {
       return {
         title: "You already hold a Yes position",
         explanation: `You own ${yesQty} Yes contract${yesQty !== "1" ? "s" : ""} on this market. Each Yes contract is a bet that ${market.ticker} will close above the strike price. Buying No (the opposite bet) while holding Yes isn't allowed — it would create a conflicting position.`,
         guidance: `To switch sides, first sell your ${yesQty} Yes contract${yesQty !== "1" ? "s" : ""} using the "Sell Yes" tab. Once sold, you can buy No.`,
         guidanceAction: "sell_yes",
+      };
+    }
+    if (action === "buy_no" && hasRestingBids) {
+      return {
+        title: "You have a pending buy order",
+        explanation: `You have an open bid (buy Yes) order on this market. This means you're already positioned on the Yes side. You can't buy No while you have a resting bid.`,
+        guidance: `Wait for your bid to fill, or cancel it first. Then you can buy No.`,
+        guidanceAction: "buy_yes",
       };
     }
     return null;
@@ -324,6 +384,8 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
       }
 
       setQuantityInput("");
+      // Refresh balances so position constraints update immediately
+      setRefreshCount((c) => c + 1);
       onTradeComplete?.();
     } catch (err: unknown) {
       setError(parseSolanaError(err));
