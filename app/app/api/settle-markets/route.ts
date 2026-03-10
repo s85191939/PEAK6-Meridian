@@ -224,30 +224,62 @@ async function fetchYahooPrices(): Promise<Record<string, OraclePrice>> {
 
 /**
  * Fetch closing prices with Pyth-first, Yahoo-fallback strategy.
- * Implements 15-minute retry window per PRD.
+ * Implements 15-minute retry window per PRD:
+ *   - If oracle confidence is too wide, retry every 30 seconds
+ *   - Up to 15 minutes (30 retries)
+ *   - If still failing, return partial results for admin manual override
  */
+const RETRY_INTERVAL_MS = 30_000; // 30 seconds
+const MAX_RETRY_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+const MAX_RETRIES = Math.floor(MAX_RETRY_DURATION_MS / RETRY_INTERVAL_MS); // 30
+
 async function fetchOraclePrices(): Promise<{
   prices: Record<string, OraclePrice>;
   source: string;
   retries: number;
 }> {
-  // Try Pyth first
-  let prices = await fetchPythPrices();
   let retries = 0;
+  let prices: Record<string, OraclePrice> = {};
 
-  if (Object.keys(prices).length >= MAG7_TICKERS.length) {
-    return { prices, source: "pyth", retries: 0 };
+  // Retry loop: try Pyth every 30s for up to 15 min
+  while (retries <= MAX_RETRIES) {
+    prices = await fetchPythPrices();
+
+    if (Object.keys(prices).length >= MAG7_TICKERS.length) {
+      return { prices, source: "pyth", retries };
+    }
+
+    // If first attempt or still missing tickers, log and retry
+    const missing = MAG7_TICKERS.filter((t) => !prices[t]);
+    if (retries < MAX_RETRIES) {
+      console.log(
+        `Pyth returned ${Object.keys(prices).length}/${MAG7_TICKERS.length} prices ` +
+        `(missing: ${missing.join(", ")}). Retry ${retries + 1}/${MAX_RETRIES} in 30s...`
+      );
+      await new Promise((resolve) => setTimeout(resolve, RETRY_INTERVAL_MS));
+      retries++;
+    } else {
+      break;
+    }
   }
 
-  // If Pyth is incomplete (market closed, some feeds stale), try Yahoo for missing
-  console.log(`Pyth returned ${Object.keys(prices).length}/${MAG7_TICKERS.length} prices. Trying Yahoo for missing...`);
+  // After retry window exhausted, try Yahoo for missing tickers
+  console.log(`Pyth retry window exhausted after ${retries} retries. Trying Yahoo fallback...`);
   const yahooPrices = await fetchYahooPrices();
 
-  // Fill in missing prices from Yahoo
   for (const ticker of MAG7_TICKERS) {
     if (!prices[ticker] && yahooPrices[ticker]) {
       prices[ticker] = yahooPrices[ticker];
     }
+  }
+
+  // If still missing tickers, log alert for admin manual override
+  const stillMissing = MAG7_TICKERS.filter((t) => !prices[t]);
+  if (stillMissing.length > 0) {
+    console.error(
+      `ALERT: Oracle failure after 15-min retry. Missing tickers: ${stillMissing.join(", ")}. ` +
+      `Admin should use admin_settle_override with manual price and enforced time delay.`
+    );
   }
 
   const source = Object.values(prices).some((p) => p.source === "yahoo_fallback")

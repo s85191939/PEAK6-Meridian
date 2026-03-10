@@ -10,6 +10,7 @@ import {
   findConfigPda,
   findMarketRegistryPda,
   findVaultPda,
+  findOrderbookPda,
   formatStrikePrice,
   formatMarketDate,
   formatUsdc,
@@ -31,6 +32,8 @@ interface Position {
   noBalance: BN;
   yesMint: PublicKey;
   noMint: PublicKey;
+  entryPrice: number | null; // avg entry price from on-chain orders
+  costBasis: number | null;  // total cost = avgPrice * quantity
 }
 
 export default function PortfolioView() {
@@ -124,23 +127,80 @@ export default function PortfolioView() {
         }
       }
 
-      const userPositions: Position[] = [];
+      // Collect markets with positions, then batch-fetch orderbooks for entry prices
+      const positionIndices: number[] = [];
       for (const [i, bal] of balances.entries()) {
         if (bal.yesBalance.gt(new BN(0)) || bal.noBalance.gt(new BN(0))) {
-          const market = marketAccounts[i]!;
-          userPositions.push({
-            marketPubkey: marketPubkeys[i],
-            ticker: market.ticker as string,
-            strikePrice: market.strikePrice as BN,
-            date: market.date as number,
-            settled: market.settled as boolean,
-            outcomeYesWins: market.outcomeYesWins as boolean,
-            yesBalance: bal.yesBalance,
-            noBalance: bal.noBalance,
-            yesMint: market.yesMint as PublicKey,
-            noMint: market.noMint as PublicKey,
-          });
+          positionIndices.push(i);
         }
+      }
+
+      // Batch fetch orderbooks for all markets with positions
+      const orderbookPdas = positionIndices.map((i) => findOrderbookPda(marketPubkeys[i])[0]);
+      const orderbookAccounts = await program.account.orderBook.fetchMultiple(orderbookPdas);
+
+      const userPositions: Position[] = [];
+      for (let j = 0; j < positionIndices.length; j++) {
+        const i = positionIndices[j];
+        const bal = balances.get(i)!;
+        const market = marketAccounts[i]!;
+
+        // Compute entry price from on-chain order history
+        let entryPrice: number | null = null;
+        let costBasis: number | null = null;
+        const orderbook = orderbookAccounts[j];
+        if (orderbook) {
+          const userOrders = (orderbook.orders as any[]).filter(
+            (o: any) => o.maker.equals(publicKey) && o.filled > 0
+          );
+
+          if (userOrders.length > 0) {
+            // For bids (buying Yes): entry price = avg fill price
+            // For asks (selling Yes to get No): entry price = 1 - avg fill price
+            const holdingYes = bal.yesBalance.gt(new BN(0));
+            let totalFilled = 0;
+            let totalCost = 0;
+
+            for (const order of userOrders) {
+              const filledQty = Number(order.filled) / 1_000_000;
+              const orderPrice = Number(order.price) / 1_000_000;
+
+              if (order.isBid && holdingYes) {
+                // User bought Yes via bid
+                totalFilled += filledQty;
+                totalCost += filledQty * orderPrice;
+              } else if (!order.isBid && !holdingYes) {
+                // User sold Yes (from mint_pair) to keep No → entry = 1 - askPrice
+                totalFilled += filledQty;
+                totalCost += filledQty * (1 - orderPrice);
+              }
+            }
+
+            if (totalFilled > 0) {
+              entryPrice = Math.round((totalCost / totalFilled) * 100) / 100;
+              const contracts = Math.max(
+                bal.yesBalance.toNumber() / 1_000_000,
+                bal.noBalance.toNumber() / 1_000_000
+              );
+              costBasis = entryPrice * contracts;
+            }
+          }
+        }
+
+        userPositions.push({
+          marketPubkey: marketPubkeys[i],
+          ticker: market.ticker as string,
+          strikePrice: market.strikePrice as BN,
+          date: market.date as number,
+          settled: market.settled as boolean,
+          outcomeYesWins: market.outcomeYesWins as boolean,
+          yesBalance: bal.yesBalance,
+          noBalance: bal.noBalance,
+          yesMint: market.yesMint as PublicKey,
+          noMint: market.noMint as PublicKey,
+          entryPrice,
+          costBasis,
+        });
       }
 
       setPositions(userPositions);
@@ -213,7 +273,10 @@ export default function PortfolioView() {
   );
 
   // Calculate portfolio value for each position
-  const getPositionValue = (pos: Position): { value: number; maxPayout: number; contracts: number } => {
+  const getPositionValue = (pos: Position): {
+    currentValue: number; maxPayout: number; contracts: number;
+    pnl: number | null; pnlPercent: number | null; entryPrice: number | null;
+  } => {
     const yesQty = pos.yesBalance.toNumber() / 1_000_000;
     const noQty = pos.noBalance.toNumber() / 1_000_000;
     const contracts = Math.max(yesQty, noQty);
@@ -222,20 +285,32 @@ export default function PortfolioView() {
       // Settled: winning tokens worth $1, losing worth $0
       const yesValue = pos.outcomeYesWins ? yesQty : 0;
       const noValue = pos.outcomeYesWins ? 0 : noQty;
-      return { value: yesValue + noValue, maxPayout: yesValue + noValue, contracts };
+      const currentValue = yesValue + noValue;
+      const pnl = pos.costBasis != null ? currentValue - pos.costBasis : null;
+      const pnlPercent = pos.costBasis != null && pos.costBasis > 0
+        ? (pnl! / pos.costBasis) * 100 : null;
+      return { currentValue, maxPayout: currentValue, contracts, pnl, pnlPercent, entryPrice: pos.entryPrice };
     }
 
     // Active: max payout = contracts × $1.00
     const maxPayout = contracts;
-    // Current estimated value: each contract is worth ~$0.50 (midpoint — no live price in portfolio)
-    const value = contracts * 0.5;
-    return { value, maxPayout, contracts };
+    // Current value estimated at $0.50/contract (midpoint) if no entry price
+    const currentValue = pos.costBasis ?? contracts * 0.5;
+    const pnl = pos.costBasis != null ? maxPayout - pos.costBasis : null;
+    const pnlPercent = pos.costBasis != null && pos.costBasis > 0
+      ? (pnl! / pos.costBasis) * 100 : null;
+    return { currentValue, maxPayout, contracts, pnl, pnlPercent, entryPrice: pos.entryPrice };
   };
 
   const totalMaxPayout = positions.reduce(
     (sum, pos) => sum + getPositionValue(pos).maxPayout,
     0
   );
+  const totalCostBasis = positions.reduce(
+    (sum, pos) => sum + (pos.costBasis ?? 0),
+    0
+  );
+  const totalPnl = totalMaxPayout - totalCostBasis;
 
   if (!publicKey) {
     return (
@@ -279,7 +354,7 @@ export default function PortfolioView() {
   return (
     <div className="space-y-6">
       {/* Portfolio Summary Header */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         <div className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-5">
           <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
             Max Payout
@@ -289,6 +364,19 @@ export default function PortfolioView() {
           </p>
           <p className="mt-0.5 text-[11px] text-gray-600">
             if all positions win
+          </p>
+        </div>
+        <div className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-5">
+          <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+            P&L
+          </span>
+          <p className={`mt-1 font-mono text-2xl font-bold ${
+            totalPnl >= 0 ? "text-emerald-400" : "text-red-400"
+          }`}>
+            {totalPnl >= 0 ? "+" : ""}{totalCostBasis > 0 ? `$${totalPnl.toFixed(2)}` : "—"}
+          </p>
+          <p className="mt-0.5 text-[11px] text-gray-600">
+            {totalCostBasis > 0 ? `cost basis $${totalCostBasis.toFixed(2)}` : "no trades yet"}
           </p>
         </div>
         <div className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-5">
@@ -428,7 +516,7 @@ export default function PortfolioView() {
                 </div>
 
                 {/* Position details */}
-                <div className="mb-4 grid grid-cols-3 gap-3">
+                <div className="mb-4 grid grid-cols-5 gap-3">
                   <div className="rounded-xl bg-gray-800/30 p-3 ring-1 ring-inset ring-gray-700/30">
                     <span className="text-[11px] font-medium text-gray-500">
                       {pos.yesBalance.gt(new BN(0)) && pos.noBalance.gt(new BN(0))
@@ -454,11 +542,33 @@ export default function PortfolioView() {
                     </p>
                   </div>
                   <div className="rounded-xl bg-gray-800/30 p-3 ring-1 ring-inset ring-gray-700/30">
+                    <span className="text-[11px] font-medium text-gray-500">Entry Price</span>
+                    <p className="font-mono text-sm font-bold text-white">
+                      {posValue.entryPrice != null ? `$${posValue.entryPrice.toFixed(2)}` : "—"}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-gray-800/30 p-3 ring-1 ring-inset ring-gray-700/30">
                     <span className="text-[11px] font-medium text-gray-500">
                       {pos.settled ? "Payout" : "Max Payout"}
                     </span>
                     <p className="font-mono text-sm font-bold text-emerald-400">
                       ${posValue.maxPayout.toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-gray-800/30 p-3 ring-1 ring-inset ring-gray-700/30">
+                    <span className="text-[11px] font-medium text-gray-500">P&L</span>
+                    <p className={`font-mono text-sm font-bold ${
+                      posValue.pnl == null ? "text-gray-500"
+                        : posValue.pnl >= 0 ? "text-emerald-400" : "text-red-400"
+                    }`}>
+                      {posValue.pnl != null
+                        ? `${posValue.pnl >= 0 ? "+" : ""}$${posValue.pnl.toFixed(2)}`
+                        : "—"}
+                      {posValue.pnlPercent != null && (
+                        <span className="ml-1 text-[10px]">
+                          ({posValue.pnlPercent >= 0 ? "+" : ""}{posValue.pnlPercent.toFixed(0)}%)
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
