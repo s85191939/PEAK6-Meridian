@@ -249,12 +249,27 @@ Tests verify the full lifecycle: config → registry → create market → regis
 
 ## Risks & Limitations
 
-1. **Oracle manipulation**: Compromised price feed settles markets incorrectly. *Mitigation*: Multiple oracle sources, TWAP pricing, settlement delay with dispute window.
+1. **Oracle manipulation**: Compromised price feed settles markets incorrectly. *Mitigation*: Dual oracle sources (Pyth primary + Yahoo fallback), staleness checks (<5 min), confidence interval validation (<1%), admin settle override with time delay.
 2. **Vault drain via invariant bug**: Flaw in mint/merge/redeem breaks $1.00 invariant. *Mitigation*: On-chain checked arithmetic, invariant assertions in every test, formal verification for production.
 3. **Front-running**: Validators reorder transactions to front-run large orders. *Mitigation*: Jito bundles for atomic execution, MEV protection.
 4. **Order book capacity**: Fixed 64-slot book can be filled with dust orders. *Mitigation*: Minimum order size, maker fees, heap-allocated book (production).
-5. **No regulatory compliance**: This is a proof-of-concept on devnet. A production deployment would require CFTC/SEC regulatory approval, which PEAK6 is uniquely positioned to obtain via their Apex clearing infrastructure and Bruce ATS regulatory track record.
+5. **Devnet only**: This is a proof-of-concept running on Solana devnet with no real funds. Not intended for production use without further auditing and hardening.
 6. **Simplified CLOB**: The on-chain order book demonstrates matching mechanics but is not production-grade. For production, integrate Phoenix DEX for battle-tested matching and existing liquidity.
+
+## Key Dependencies
+
+| Dependency | Purpose | Justification |
+|-----------|---------|---------------|
+| `@coral-xyz/anchor` | Solana program framework | Industry standard for Solana smart contract development. Provides IDL generation, account serialization, and type-safe client. |
+| `@solana/web3.js` | Solana RPC client | Official Solana SDK — required for all blockchain interactions (transactions, account reads). |
+| `@solana/spl-token` | SPL token operations | Official library for creating/minting/burning tokens. Yes/No tokens are SPL tokens. |
+| `@solana/wallet-adapter-*` | Wallet connection | Official Solana wallet adapter — connects Phantom, Solflare, etc. No custom wallet code needed. |
+| `next` (Next.js) | Frontend framework | App Router provides file-based routing (`/trade/[market]`), API routes for cron automation, and server-side rendering. |
+| `bn.js` | Big number math | Required for Solana u64/u128 amounts. JavaScript numbers lose precision above 2^53. |
+| `buffer` | Buffer polyfill | Required for Solana SDK in browser environment (web3.js uses Node.js Buffer). |
+| `tailwindcss` | CSS framework | Utility-first CSS — zero runtime cost, rapid iteration on trading UI. No custom CSS framework overhead. |
+
+No unnecessary abstractions: Pyth oracle and Yahoo Finance are accessed via plain `fetch()` — no SDK packages needed. The Anchor client handles all Solana program interaction directly.
 
 ## Production Roadmap
 
