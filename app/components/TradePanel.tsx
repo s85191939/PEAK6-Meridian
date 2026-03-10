@@ -152,6 +152,9 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
   const isTransactionBlocked = (): boolean => {
     if (action === "buy_yes" && (hasNoPosition || hasRestingAsks)) return true;
     if (action === "buy_no" && (hasYesPosition || hasRestingBids)) return true;
+    // Can't sell tokens you don't hold
+    if (action === "sell_yes" && !hasYesPosition) return true;
+    if (action === "sell_no" && !hasNoPosition) return true;
     return false;
   };
 
@@ -197,6 +200,22 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
         explanation: `You have an open bid (buy Yes) order on this market. This means you're already positioned on the Yes side. You can't buy No while you have a resting bid.`,
         guidance: `Wait for your bid to fill, or cancel it first. Then you can buy No.`,
         guidanceAction: "buy_yes",
+      };
+    }
+    if (action === "sell_yes" && !hasYesPosition) {
+      return {
+        title: "No Yes tokens to sell",
+        explanation: `You don't hold any Yes contracts on this market. You need Yes tokens in your wallet before you can sell them.`,
+        guidance: `Use "Buy Yes" to acquire Yes contracts first, or use "Sell No" if you want to exit your No position.`,
+        guidanceAction: hasNoPosition ? "sell_no" : "buy_yes",
+      };
+    }
+    if (action === "sell_no" && !hasNoPosition) {
+      return {
+        title: "No No tokens to sell",
+        explanation: `You don't hold any No contracts on this market. You need No tokens in your wallet before you can sell them.`,
+        guidance: `Use "Buy No" to acquire No contracts first, or use "Sell Yes" if you want to exit your Yes position.`,
+        guidanceAction: hasYesPosition ? "sell_yes" : "buy_no",
       };
     }
     return null;
@@ -698,7 +717,11 @@ export default function TradePanel({ market, onTradeComplete }: TradePanelProps)
           ) : market.settled ? (
             "Market Settled"
           ) : isTransactionBlocked() ? (
-            "Sell Existing Position First"
+            action === "sell_yes" && !hasYesPosition
+              ? "No Yes Tokens to Sell"
+              : action === "sell_no" && !hasNoPosition
+                ? "No No Tokens to Sell"
+                : "Sell Existing Position First"
           ) : (
             actionLabels[action]
           )}
