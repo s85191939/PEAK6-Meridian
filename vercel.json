@@ -8,7 +8,7 @@
     },
     {
       "path": "/api/settle-markets",
-      "schedule": "5 20 * * 1-5"
+      "schedule": "5 21 * * 1-5"
     }
   ]
 }
