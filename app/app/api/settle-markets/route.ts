@@ -339,6 +339,25 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  // Time guard: only settle after 4:00 PM ET
+  // Cron fires at both 20:05 and 21:05 UTC to cover EDT/EST.
+  // If it's before 4 PM ET, skip — the next cron run will handle it.
+  const etHour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hour: "numeric",
+      hour12: false,
+    }).format(new Date())
+  );
+  if (etHour < 16) {
+    return NextResponse.json({
+      success: true,
+      skipped: true,
+      reason: `Too early to settle (${etHour}:xx ET). Markets close at 4:00 PM ET.`,
+      date: getDateInt(),
+    });
+  }
+
   try {
     const adminKeypair = Keypair.fromSecretKey(Uint8Array.from(ADMIN_SECRET));
     const connection = new Connection(RPC_URL, "confirmed");

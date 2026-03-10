@@ -94,14 +94,15 @@ pub fn handler_admin_override(
 }
 
 /// Convert a YYYYMMDD date integer to the Unix timestamp of 4:00 PM ET on that day.
-/// 4:00 PM ET = 21:00 UTC (during EST) or 20:00 UTC (during EDT).
-/// For simplicity on devnet, we use 21:00 UTC (EST) as the standard.
+/// Handles US Eastern Daylight Saving Time:
+///   EDT (Mar second Sunday – Nov first Sunday): 4 PM ET = 20:00 UTC
+///   EST (Nov first Sunday – Mar second Sunday): 4 PM ET = 21:00 UTC
 fn market_close_timestamp(date: u32) -> i64 {
     let year = (date / 10000) as i64;
     let month = ((date % 10000) / 100) as i64;
     let day = (date % 100) as i64;
 
-    // Days from epoch to given date (simplified — sufficient for devnet)
+    // Days from epoch to given date
     // Using the algorithm from http://howardhinnant.github.io/date_algorithms.html
     let y = if month <= 2 { year - 1 } else { year };
     let era = y / 400;
@@ -111,8 +112,58 @@ fn market_close_timestamp(date: u32) -> i64 {
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     let days = era * 146097 + doe - 719468;
 
-    // 4:00 PM ET = 21:00 UTC (EST)
-    days * 86400 + 21 * 3600
+    // 4:00 PM ET in UTC — depends on DST
+    let utc_hour = if is_us_dst(year, month, day) { 20 } else { 21 };
+    days * 86400 + utc_hour * 3600
+}
+
+/// Determine if a date falls within US Eastern Daylight Saving Time.
+/// DST starts: second Sunday of March at 2:00 AM ET
+/// DST ends:   first Sunday of November at 2:00 AM ET
+/// Since markets only trade Mon-Fri during business hours, the exact
+/// 2 AM boundary doesn't matter — we only care about the date.
+fn is_us_dst(year: i64, month: i64, day: i64) -> bool {
+    // Apr–Oct: always DST
+    if month >= 4 && month <= 10 {
+        return true;
+    }
+    // Dec–Feb: never DST
+    if month <= 2 || month == 12 {
+        return false;
+    }
+    // March: DST starts on second Sunday
+    if month == 3 {
+        let second_sunday = second_sunday_of_month(year, 3);
+        return day >= second_sunday;
+    }
+    // November: DST ends on first Sunday
+    if month == 11 {
+        let first_sunday = first_sunday_of_month(year, 11);
+        return day < first_sunday;
+    }
+    false
+}
+
+/// Tomohiko Sakamoto's day-of-week algorithm.
+/// Returns 0=Sunday, 1=Monday, ..., 6=Saturday.
+fn day_of_week(year: i64, month: i64, day: i64) -> i64 {
+    let t = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
+    let y = if month < 3 { year - 1 } else { year };
+    (y + y / 4 - y / 100 + y / 400 + t[(month - 1) as usize] + day) % 7
+}
+
+/// Find the second Sunday of a given month/year.
+fn second_sunday_of_month(year: i64, month: i64) -> i64 {
+    let dow_first = day_of_week(year, month, 1); // day of week for the 1st
+    // First Sunday: if the 1st is Sunday (0), it's day 1; otherwise 8 - dow
+    let first_sunday = if dow_first == 0 { 1 } else { 8 - dow_first };
+    first_sunday + 7 // second Sunday
+}
+
+/// Find the first Sunday of a given month/year.
+fn first_sunday_of_month(year: i64, month: i64) -> i64 {
+    let dow_first = day_of_week(year, month, 1);
+    if dow_first == 0 { 1 } else { 8 - dow_first }
 }
 
 #[derive(Accounts)]

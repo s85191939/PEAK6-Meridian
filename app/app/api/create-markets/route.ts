@@ -127,6 +127,25 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  // Time guard: only create markets after 8:00 AM ET
+  // Cron fires at both 12:30 and 13:30 UTC to cover EDT/EST.
+  // If it's before 8 AM ET, skip — the next cron run will handle it.
+  const etHour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hour: "numeric",
+      hour12: false,
+    }).format(new Date())
+  );
+  if (etHour < 8) {
+    return NextResponse.json({
+      success: true,
+      skipped: true,
+      reason: `Too early to create markets (${etHour}:xx ET). Markets created at 8:30 AM ET.`,
+      date: getDateInt(),
+    });
+  }
+
   try {
     const adminKeypair = Keypair.fromSecretKey(Uint8Array.from(ADMIN_SECRET));
     const connection = new Connection(RPC_URL, "confirmed");
