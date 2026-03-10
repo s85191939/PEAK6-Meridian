@@ -1,4 +1,14 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "crons": [
+    {
+      "path": "/api/create-markets",
+      "schedule": "30 12 * * 1-5"
+    },
+    {
+      "path": "/api/settle-markets",
+      "schedule": "5 20 * * 1-5"
+    }
+  ]
 }

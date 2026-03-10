@@ -62,6 +62,27 @@ function getDateInt(): number {
   return parseInt(etStr.replace(/-/g, ""));
 }
 
+/**
+ * Check if today is a US stock market trading day (Mon-Fri, non-holiday).
+ */
+function isTradingDay(): boolean {
+  const now = new Date();
+  const etDay = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+  }).format(now);
+
+  if (etDay === "Sat" || etDay === "Sun") return false;
+
+  const etDate = now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const HOLIDAYS_2026 = [
+    "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03",
+    "2026-05-25", "2026-06-19", "2026-07-03", "2026-09-07",
+    "2026-11-26", "2026-12-25",
+  ];
+  return !HOLIDAYS_2026.includes(etDate);
+}
+
 const STRIKE_OFFSETS = [-0.09, -0.06, -0.03, 0.03, 0.06, 0.09];
 
 function computeStrikes(prevClose: number): number[] {
@@ -274,6 +295,16 @@ export async function POST(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
   if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Don't settle on weekends/holidays — no markets should exist for non-trading days
+  if (!isTradingDay()) {
+    return NextResponse.json({
+      success: true,
+      skipped: true,
+      reason: "Not a trading day (weekend or market holiday). Nothing to settle.",
+      date: getDateInt(),
+    });
   }
 
   try {

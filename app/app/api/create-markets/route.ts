@@ -40,6 +40,40 @@ function getDateInt(): number {
   return parseInt(etStr.replace(/-/g, ""));
 }
 
+/**
+ * Check if today is a US stock market trading day (Mon-Fri, non-holiday).
+ * Returns false on weekends. Major market holidays are also excluded.
+ */
+function isTradingDay(): boolean {
+  const now = new Date();
+  // Get current day of week in ET
+  const etDay = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+  }).format(now);
+
+  // Weekends
+  if (etDay === "Sat" || etDay === "Sun") return false;
+
+  // Major US market holidays (approximate — NYSE/NASDAQ closures)
+  const etDate = now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const HOLIDAYS_2026 = [
+    "2026-01-01", // New Year's Day
+    "2026-01-19", // MLK Day
+    "2026-02-16", // Presidents' Day
+    "2026-04-03", // Good Friday
+    "2026-05-25", // Memorial Day
+    "2026-06-19", // Juneteenth
+    "2026-07-03", // Independence Day (observed)
+    "2026-09-07", // Labor Day
+    "2026-11-26", // Thanksgiving
+    "2026-12-25", // Christmas
+  ];
+  if (HOLIDAYS_2026.includes(etDate)) return false;
+
+  return true;
+}
+
 function computeStrikes(prevClose: number): number[] {
   const strikes = new Set<number>();
   for (const offset of STRIKE_OFFSETS) {
@@ -81,6 +115,16 @@ export async function POST(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
   if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Don't create markets on weekends or holidays — US stock markets are closed
+  if (!isTradingDay()) {
+    return NextResponse.json({
+      success: true,
+      skipped: true,
+      reason: "Not a trading day (weekend or market holiday). US markets trade Mon-Fri only.",
+      date: getDateInt(),
+    });
   }
 
   try {
