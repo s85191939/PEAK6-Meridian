@@ -152,8 +152,12 @@ export function formatStrikePrice(strikePrice: BN): string {
 // ---------------------------------------------------------------------------
 
 /** Convert an on-chain date (u32 YYYYMMDD) to a human-readable string. */
-export function formatMarketDate(_date: number): string {
-  return "Today";
+export function formatMarketDate(date: number): string {
+  const year = Math.floor(date / 10000);
+  const month = Math.floor((date % 10000) / 100);
+  const day = date % 100;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${months[month - 1]} ${day}, ${year}`;
 }
 
 /**

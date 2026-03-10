@@ -146,6 +146,10 @@ export default function MarketCard({ market }: { market: MarketData }) {
       {/* Footer */}
       <div className="mt-4 flex items-center justify-between">
         <div className="flex items-center gap-3 text-xs text-gray-500">
+          <span className="font-medium text-gray-400">
+            {formatMarketDate(market.date)}
+          </span>
+          <span className="text-gray-700">&middot;</span>
           <span className="font-mono">
             {(market.totalPairsMinted.toNumber() / 1_000_000).toLocaleString("en-US", { maximumFractionDigits: 0 })} contracts
           </span>
