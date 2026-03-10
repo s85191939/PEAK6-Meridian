@@ -316,7 +316,7 @@ export async function POST(request: NextRequest) {
               admin: adminKeypair.publicKey,
               config: configPda,
               market: marketPda,
-              registry: registryPda,
+              marketRegistry: registryPda,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             } as any)
             .signers([adminKeypair])
