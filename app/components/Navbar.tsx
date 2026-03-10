@@ -25,7 +25,7 @@ export default function Navbar() {
     <nav className="sticky top-0 z-50 border-b border-gray-800/60 bg-[#0a0a0a]/95 backdrop-blur-xl">
       {/* Risks/Limitations Disclaimer */}
       <div className="border-b border-yellow-500/20 bg-yellow-500/5 px-4 py-1.5 text-center text-[11px] text-yellow-400/80">
-        Proof-of-concept on Solana Devnet — no real funds. Not audited. Not financial advice. Use at your own risk.
+        Risks/Limitations: Proof-of-concept on Solana Devnet — no real funds. Not audited. Not financial advice. Use at your own risk.
       </div>
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
         {/* Logo — PEAK6 Meridian */}
