@@ -218,10 +218,19 @@ export default function MarketsPage() {
             </svg>
           </div>
           <p className="text-sm font-medium text-gray-400">
-            {markets.length === 0
+            {filter === "active" && markets.length > 0
+              ? "No active markets right now."
+              : markets.length === 0
               ? "No markets found. Markets will appear here once created on-chain."
               : "No markets match the current filter."}
           </p>
+          {filter === "active" && markets.length > 0 && (
+            <p className="mt-2 text-xs text-gray-500">
+              0DTE contracts are created at 8:30 AM ET and settle at 4:00 PM ET, Mon–Fri.
+              <br />
+              Markets will appear here during the next trading session.
+            </p>
+          )}
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
