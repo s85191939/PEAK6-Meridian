@@ -31,7 +31,7 @@ make frontend
 |---------|-------------|
 | `make install` | Install Anchor + frontend npm dependencies |
 | `make build` | Build the Solana program |
-| `make test` | Run all 23 integration tests on local validator |
+| `make test` | Run all 40 integration tests on local validator |
 | `make frontend` | Start Next.js dev server on port 3000 |
 | `make demo` | Run full lifecycle script (create → mint → trade → settle → redeem) |
 | `make deploy` | Deploy program to Solana devnet |
@@ -42,7 +42,7 @@ make frontend
 
 There is no separate backend server. The **Solana program is the backend** — it runs on-chain and processes all transactions directly.
 
-- **`make test`** — Spins up a local Solana validator automatically, deploys the program, runs all 23 tests, then shuts down. This is the fastest way to verify everything works.
+- **`make test`** — Spins up a local Solana validator automatically, deploys the program, runs all 40 integration tests, then shuts down. This is the fastest way to verify everything works.
 - **`make frontend`** — Starts the Next.js UI on `localhost:3000`. It connects to Solana devnet by default (configurable in `app/lib/constants.ts`).
 - **`make demo`** — Full feature demo on local validator (see below).
 - **`make deploy`** — Deploys the compiled program to Solana devnet so the frontend can interact with it live.
@@ -133,13 +133,14 @@ Orders fill immediately when prices cross (match-at-place). When a new bid meets
 | ~4:05 PM ET | Automation reads closing price, settles all contracts |
 | 4:05 PM ET+ | Redemption enabled — winners claim USDC |
 
-## Smart Contract Instructions (13 total)
+## Smart Contract Instructions (17 total)
 
 | Instruction | Description | Who |
 |-------------|-------------|-----|
 | `initialize` | Set admin + USDC mint | Admin (once) |
 | `init_registry` | Create on-chain market registry | Admin (once) |
 | `create_market` | Create market + Yes/No mints | Admin |
+| `add_strike` | Add intraday strike to existing ticker/date | Admin |
 | `register_market` | Add market to registry for frontend discovery | Admin |
 | `init_orderbook` | Create vault + orderbook | Admin |
 | `init_escrow_yes` | Create Yes token escrow for ask collateral | Admin |
@@ -149,9 +150,12 @@ Orders fill immediately when prices cross (match-at-place). When a new bid meets
 | `place_order` | Post limit order (bid/ask) with match-at-place | Any user |
 | `cancel_order` | Cancel + return collateral from escrow | Order owner |
 | `settle_market` | Set outcome (immutable) | Admin |
+| `admin_settle_override` | Emergency settlement with 1-hour delay | Admin |
 | `redeem` | Burn tokens, receive USDC (validates token_mint) | Any user |
+| `pause` | Emergency pause — blocks minting, trading, merging | Admin |
+| `unpause` | Resume normal operations | Admin |
 
-### Market Setup Flow (7 transactions)
+### Market Setup Flow (7 transactions per market)
 
 ```
 initialize → init_registry → create_market → register_market → init_orderbook → init_escrow_yes → init_bid_escrow
@@ -212,12 +216,13 @@ Bid Escrow:      seeds = ["bid_escrow", market_key]     — bid collateral
 
 ```
 ├── programs/meridian/src/
-│   ├── lib.rs                # Program entry (13 instructions)
+│   ├── lib.rs                # Program entry (17 instructions)
 │   ├── state.rs              # Config, Market, MarketRegistry, OrderBook, Order
 │   ├── errors.rs             # 19 custom error codes
 │   └── instructions/
 │       ├── initialize.rs     # Global config setup
 │       ├── create_market.rs  # Market + mints creation
+│       ├── add_strike.rs     # Add intraday strike
 │       ├── init_registry.rs  # On-chain market registry
 │       ├── register_market.rs # Add market to registry
 │       ├── init_orderbook.rs # Vault + orderbook creation
@@ -226,12 +231,14 @@ Bid Escrow:      seeds = ["bid_escrow", market_key]     — bid collateral
 │       ├── merge_pair.rs     # Yes + No → USDC (inverse)
 │       ├── place_order.rs    # Limit orders with match-at-place
 │       ├── cancel_order.rs   # Cancel + return collateral
-│       ├── settle.rs         # Immutable settlement
-│       └── redeem.rs         # Burn tokens → USDC
-├── tests/meridian.ts         # 23 integration tests
+│       ├── settle.rs         # Immutable settlement + admin override
+│       ├── redeem.rs         # Burn tokens → USDC
+│       └── pause.rs          # Emergency pause/unpause
+├── tests/meridian.ts         # 40 integration tests
 ├── scripts/
 │   ├── create-markets.ts     # Morning: create strike markets
 │   ├── settle-markets.ts     # 4 PM: settle via oracle
+│   ├── seed-orders.ts        # Automated market-making seed orders
 │   └── demo-lifecycle.ts     # Full end-to-end demo
 ├── app/                      # Next.js frontend
 │   ├── app/                  # Pages (Markets, Trade, Portfolio)
@@ -246,7 +253,7 @@ Bid Escrow:      seeds = ["bid_escrow", market_key]     — bid collateral
 └── package.json              # Node.js dependencies
 ```
 
-## Test Results (23 passing)
+## Test Results (40 passing)
 
 ```
   meridian
@@ -273,11 +280,28 @@ Bid Escrow:      seeds = ["bid_escrow", market_key]     — bid collateral
     ✓ Prevents merge on settled market
     ✓ Prevents placing orders on settled market
     ✓ Handles No-wins correctly (close < strike)
+    ✓ Sets up a fresh market for pause tests
+    ✓ Pauses the protocol
+    ✓ Unpauses the protocol
+    ✓ Prevents non-admin from pausing
+    ✓ Adds a strike via add_strike
+    ✓ Prevents duplicate strike (same ticker/strike/date)
+    ✓ Sets up a fresh market for 4 trade paths + multi-user tests
+    ✓ Buy Yes: user places bid, maker fills with crossing ask
+    ✓ Sell Yes: user sells Yes tokens via ask order
+    ✓ Buy No: user mints pair and sells Yes (net: holds No)
+    ✓ Sell No: user buys Yes and merges with No (net: gets USDC)
+    ✓ Multi-user: one mints and quotes, another takes, both redeem
+    ✓ Rejects zero settlement price (stale oracle data)
+    ✓ Settlement is immutable — outcome cannot be changed
+    ✓ Settles market at-the-money — price == strike → Yes wins
+    ✓ Admin settle override enforces 1-hour delay after market close
+    ✓ Invariant: Yes payout + No payout = $1.00 for all settled markets
 
-  23 passing
+  40 passing
 ```
 
-Tests verify the full lifecycle: config → registry → create market → register → init orderbook → init escrows → mint pairs → place orders → match-at-place fills → cancel → merge → settle → redeem. The $1.00 vault invariant (`vault.amount == total_pairs_minted × 1_000_000`) is asserted at every state transition.
+Tests verify the full lifecycle: config → registry → create market → register → init orderbook → init escrows → mint pairs → place orders → match-at-place fills → cancel → merge → settle → redeem → pause/unpause → add strike → all 4 trade paths → multi-user scenarios → at-the-money settlement → admin override. The $1.00 vault invariant (`vault.amount == total_pairs_minted × 1_000_000`) is asserted at every state transition.
 
 ## Risks & Limitations
 
@@ -286,7 +310,7 @@ Tests verify the full lifecycle: config → registry → create market → regis
 3. **Front-running**: Validators reorder transactions to front-run large orders. *Mitigation*: Jito bundles for atomic execution, MEV protection.
 4. **Order book capacity**: Fixed 64-slot book can be filled with dust orders. *Mitigation*: Minimum order size, maker fees, heap-allocated book (production).
 5. **Devnet only**: This is a proof-of-concept running on Solana devnet with no real funds. Not intended for production use without further auditing and hardening.
-6. **Simplified CLOB**: The on-chain order book demonstrates matching mechanics but is not production-grade. For production, integrate Phoenix DEX for battle-tested matching and existing liquidity.
+6. **Simplified CLOB**: The on-chain order book demonstrates matching mechanics but is not production-grade. A production deployment would benefit from a larger heap-allocated book and MEV protection.
 
 ## Key Dependencies
 
@@ -313,15 +337,16 @@ No unnecessary abstractions: Pyth oracle and Yahoo Finance are accessed via plai
 | ✅ Done | Token mint validation in redeem | Implemented |
 | ✅ Done | Frontend: registry-based market discovery | Implemented |
 | ✅ Done | Frontend: correct USDC account derivation | Implemented |
-| ✅ Done | 23 integration tests covering full lifecycle | Implemented |
+| ✅ Done | 40 integration tests covering full lifecycle | Implemented |
 | ✅ Done | Pyth oracle integration (staleness + confidence checks) | Implemented |
 | ✅ Done | Position constraints in UI (no simultaneous Yes+No) | Implemented |
 | ✅ Done | Admin settle override with time delay | Implemented |
 | ✅ Done | Automated market creation + settlement (Vercel crons) | Implemented |
-| Next | Phoenix DEX integration for production matching | Planned |
-| Next | Pause/unpause for emergency admin controls | Planned |
-| Later | WebSocket subscriptions for real-time order book | Planned |
-| Later | Automated market-making algorithms | Planned |
+| ✅ Done | Pause/unpause emergency admin controls | Implemented |
+| ✅ Done | Add intraday strike (`add_strike` instruction) | Implemented |
+| ✅ Done | All 4 trade paths (Buy Yes, Sell Yes, Buy No, Sell No) | Implemented |
+| ✅ Done | Automated market-making seed orders | Implemented |
+| ✅ Done | Portfolio page with plain-English position tracking | Implemented |
 
 ## License
 
