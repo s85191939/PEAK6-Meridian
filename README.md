@@ -31,7 +31,7 @@ make frontend
 |---------|-------------|
 | `make install` | Install Anchor + frontend npm dependencies |
 | `make build` | Build the Solana program |
-| `make test` | Run all 40 integration tests on local validator |
+| `make test` | Run all 36 integration tests on local validator |
 | `make frontend` | Start Next.js dev server on port 3000 |
 | `make demo` | Run full lifecycle script (create → mint → trade → settle → redeem) |
 | `make deploy` | Deploy program to Solana devnet |
@@ -42,7 +42,7 @@ make frontend
 
 There is no separate backend server. The **Solana program is the backend** — it runs on-chain and processes all transactions directly.
 
-- **`make test`** — Spins up a local Solana validator automatically, deploys the program, runs all 40 integration tests, then shuts down. This is the fastest way to verify everything works.
+- **`make test`** — Spins up a local Solana validator automatically, deploys the program, runs all 36 integration tests, then shuts down. This is the fastest way to verify everything works.
 - **`make frontend`** — Starts the Next.js UI on `localhost:3000`. It connects to Solana devnet by default (configurable in `app/lib/constants.ts`).
 - **`make demo`** — Full feature demo on local validator (see below).
 - **`make deploy`** — Deploys the compiled program to Solana devnet so the frontend can interact with it live.
@@ -234,7 +234,7 @@ Bid Escrow:      seeds = ["bid_escrow", market_key]     — bid collateral
 │       ├── settle.rs         # Immutable settlement + admin override
 │       ├── redeem.rs         # Burn tokens → USDC
 │       └── pause.rs          # Emergency pause/unpause
-├── tests/meridian.ts         # 40 integration tests
+├── tests/meridian.ts         # 36 integration tests
 ├── scripts/
 │   ├── create-markets.ts     # Morning: create strike markets
 │   ├── settle-markets.ts     # 4 PM: settle via oracle
@@ -253,7 +253,7 @@ Bid Escrow:      seeds = ["bid_escrow", market_key]     — bid collateral
 └── package.json              # Node.js dependencies
 ```
 
-## Test Results (40 passing)
+## Test Results (36 passing)
 
 ```
   meridian
@@ -298,7 +298,7 @@ Bid Escrow:      seeds = ["bid_escrow", market_key]     — bid collateral
     ✓ Admin settle override enforces 1-hour delay after market close
     ✓ Invariant: Yes payout + No payout = $1.00 for all settled markets
 
-  40 passing
+  36 passing
 ```
 
 Tests verify the full lifecycle: config → registry → create market → register → init orderbook → init escrows → mint pairs → place orders → match-at-place fills → cancel → merge → settle → redeem → pause/unpause → add strike → all 4 trade paths → multi-user scenarios → at-the-money settlement → admin override. The $1.00 vault invariant (`vault.amount == total_pairs_minted × 1_000_000`) is asserted at every state transition.
@@ -337,7 +337,7 @@ No unnecessary abstractions: Pyth oracle and Yahoo Finance are accessed via plai
 | ✅ Done | Token mint validation in redeem | Implemented |
 | ✅ Done | Frontend: registry-based market discovery | Implemented |
 | ✅ Done | Frontend: correct USDC account derivation | Implemented |
-| ✅ Done | 40 integration tests covering full lifecycle | Implemented |
+| ✅ Done | 36 integration tests covering full lifecycle | Implemented |
 | ✅ Done | Pyth oracle integration (staleness + confidence checks) | Implemented |
 | ✅ Done | Position constraints in UI (no simultaneous Yes+No) | Implemented |
 | ✅ Done | Admin settle override with time delay | Implemented |

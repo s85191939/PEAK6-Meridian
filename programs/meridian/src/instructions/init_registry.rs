@@ -26,7 +26,9 @@ pub struct InitRegistry<'info> {
     #[account(
         init,
         payer = admin,
-        space = 8 + MarketRegistry::INIT_SPACE,
+        // Start small (empty vec): 8 discriminator + 32 admin + 4 vec_len + 1 bump = 45 bytes
+        // register_market uses realloc to grow by 32 bytes per market added
+        space = 8 + 32 + 4 + 1,
         seeds = [b"market_registry"],
         bump,
     )]
