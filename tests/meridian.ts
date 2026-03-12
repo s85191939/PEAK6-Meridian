@@ -1431,12 +1431,13 @@ describe("meridian", () => {
       .signers([user]).rpc();
 
     // Maker places crossing ask (sells Yes at $0.65) → instant fill
+    // remaining_accounts = bid maker's Yes account (where Yes tokens are delivered)
     await program.methods.placeOrder(false, new BN(650_000), new BN(2_000_000))
       .accounts({ user: maker.publicKey, config: configPda, market: market4Pda,
         orderbook: orderbook4Pda, bidEscrow: bidEscrow4Pda,
         userUsdc: makerUsdcAddr, userYes: makerYes4.address, escrowYes: escrowYes4Pda,
         tokenProgram: TOKEN_PROGRAM_ID } as any)
-      .remainingAccounts([{ pubkey: userUsdcAddr, isSigner: false, isWritable: true }])
+      .remainingAccounts([{ pubkey: userYes4.address, isSigner: false, isWritable: true }])
       .signers([maker]).rpc();
 
     // Verify: user got Yes tokens
@@ -1525,12 +1526,13 @@ describe("meridian", () => {
     const makerYesBal = Number((await getAccount(provider.connection, makerYes4.address)).amount);
 
     if (makerYesBal >= 1_000_000) {
+      // remaining_accounts = bid maker's Yes account (where Yes tokens are delivered)
       await program.methods.placeOrder(false, new BN(600_000), new BN(1_000_000))
         .accounts({ user: maker.publicKey, config: configPda, market: market4Pda,
           orderbook: orderbook4Pda, bidEscrow: bidEscrow4Pda,
           userUsdc: makerUsdcAddr, userYes: makerYes4.address, escrowYes: escrowYes4Pda,
           tokenProgram: TOKEN_PROGRAM_ID } as any)
-        .remainingAccounts([{ pubkey: userUsdcAddr, isSigner: false, isWritable: true }])
+        .remainingAccounts([{ pubkey: userYes4.address, isSigner: false, isWritable: true }])
         .signers([maker]).rpc();
 
       // Step 2: Merge Yes + No → get $1 USDC back
@@ -1555,7 +1557,7 @@ describe("meridian", () => {
   it("Multi-user: one mints and quotes, another takes, both redeem", async () => {
     const ticker5 = "AMZN";
     const strikePrice5 = new BN(20000); // $200.00
-    const date5 = 20260502;
+    const date5 = 20260305; // Must be in the past so settlement time check passes
 
     const [m5Pda] = PublicKey.findProgramAddressSync(
       [Buffer.from("market"), Buffer.from(ticker5),

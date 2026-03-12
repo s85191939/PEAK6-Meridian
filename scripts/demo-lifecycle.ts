@@ -41,6 +41,22 @@ function $(amt: number): string {
   return `$${(amt / 1_000_000).toFixed(2)}`;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** On devnet, pause between txs to avoid 429 rate limits */
+let _isDevnet = false;
+let _lastRpcTime = 0;
+async function throttle() {
+  if (!_isDevnet) return;
+  const now = Date.now();
+  const elapsed = now - _lastRpcTime;
+  const minGap = 2500; // ms between RPC calls on devnet
+  if (elapsed < minGap) {
+    await sleep(minGap - elapsed);
+  }
+  _lastRpcTime = Date.now();
+}
+
 function derivePDAs(
   ticker: string,
   strikePrice: BN,
@@ -89,6 +105,16 @@ async function main() {
   const program = anchor.workspace.Meridian as Program<Meridian>;
   const admin = provider.wallet as anchor.Wallet;
 
+  // On devnet, wrap provider.sendAndConfirm to auto-throttle between transactions
+  const isDevnetUrl = conn.rpcEndpoint.includes("devnet");
+  if (isDevnetUrl) {
+    const origSendAndConfirm = provider.sendAndConfirm.bind(provider);
+    provider.sendAndConfirm = async (...args: any[]) => {
+      await throttle();
+      return (origSendAndConfirm as any)(...args);
+    };
+  }
+
   console.log("\n" + "═".repeat(70));
   console.log("  MERIDIAN — Binary Stock Outcome Markets — Full Feature Demo");
   console.log("═".repeat(70) + "\n");
@@ -98,9 +124,15 @@ async function main() {
   // ──────────────────────────────────────────────────────────
   console.log("📋 Step 0: Setting up mock USDC and 3 users...\n");
 
-  // Fund admin if needed
+  // Fund admin if needed (airdrop on localnet, skip on devnet if already funded)
   const adminBal = await conn.getBalance(admin.publicKey);
+  const isDevnet = conn.rpcEndpoint.includes("devnet");
+  _isDevnet = isDevnet;
   if (adminBal < 2 * anchor.web3.LAMPORTS_PER_SOL) {
+    if (isDevnet) {
+      console.log(`   ⚠️  Admin balance low (${(adminBal / 1e9).toFixed(2)} SOL). Fund via https://faucet.solana.com`);
+      process.exit(1);
+    }
     const sig = await conn.requestAirdrop(
       admin.publicKey,
       5 * anchor.web3.LAMPORTS_PER_SOL
@@ -108,14 +140,27 @@ async function main() {
     await conn.confirmTransaction(sig);
   }
 
-  // Create mock USDC mint (6 decimals, matching real USDC)
-  const usdcMint = await createMint(
-    conn,
-    (admin as any).payer,
-    admin.publicKey,
-    null,
-    6
+  // USDC mint — on devnet, reuse the existing one from config if available
+  // (creating a new mint would mismatch with existing config/vaults from prior runs)
+  const [configPdaEarly] = PublicKey.findProgramAddressSync(
+    [Buffer.from("config")],
+    program.programId
   );
+  let usdcMint: PublicKey;
+  const existingConfig = await conn.getAccountInfo(configPdaEarly);
+  if (isDevnet && existingConfig) {
+    const configData = await program.account.config.fetch(configPdaEarly);
+    usdcMint = configData.usdcMint;
+    console.log(`   ♻️  Reusing existing USDC mint from config: ${usdcMint.toBase58()}`);
+  } else {
+    usdcMint = await createMint(
+      conn,
+      (admin as any).payer,
+      admin.publicKey,
+      null,
+      6
+    );
+  }
 
   // 3 users: Alice (bull), Bob (bear), Charlie (market maker)
   const alice = Keypair.generate();
@@ -127,14 +172,28 @@ async function main() {
     ["Bob", bob],
     ["Charlie", charlie],
   ] as [string, Keypair][]) {
-    const sig = await conn.requestAirdrop(
-      kp.publicKey,
-      5 * anchor.web3.LAMPORTS_PER_SOL
-    );
-    await conn.confirmTransaction(sig);
+    if (isDevnet) {
+      // On devnet, transfer SOL from admin wallet instead of using rate-limited faucet
+      const tx = new anchor.web3.Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: admin.publicKey,
+          toPubkey: kp.publicKey,
+          lamports: 0.5 * anchor.web3.LAMPORTS_PER_SOL,
+        })
+      );
+      const sig = await provider.sendAndConfirm(tx);
+    } else {
+      // On localnet, airdrop is free and instant
+      const sig = await conn.requestAirdrop(
+        kp.publicKey,
+        5 * anchor.web3.LAMPORTS_PER_SOL
+      );
+      await conn.confirmTransaction(sig);
+    }
   }
 
   // Create USDC token accounts for all users
+  await throttle();
   const aliceUsdc = (
     await getOrCreateAssociatedTokenAccount(
       conn,
@@ -143,6 +202,7 @@ async function main() {
       alice.publicKey
     )
   ).address;
+  await throttle();
   const bobUsdc = (
     await getOrCreateAssociatedTokenAccount(
       conn,
@@ -151,6 +211,7 @@ async function main() {
       bob.publicKey
     )
   ).address;
+  await throttle();
   const charlieUsdc = (
     await getOrCreateAssociatedTokenAccount(
       conn,
@@ -161,8 +222,11 @@ async function main() {
   ).address;
 
   // Fund users: Alice $20, Bob $20, Charlie $20
+  await throttle();
   await mintTo(conn, (admin as any).payer, usdcMint, aliceUsdc, admin.publicKey, 20_000_000);
+  await throttle();
   await mintTo(conn, (admin as any).payer, usdcMint, bobUsdc, admin.publicKey, 20_000_000);
+  await throttle();
   await mintTo(conn, (admin as any).payer, usdcMint, charlieUsdc, admin.publicKey, 20_000_000);
 
   console.log(`   USDC Mint:  ${usdcMint.toBase58()}`);
@@ -184,24 +248,42 @@ async function main() {
     program.programId
   );
 
-  await program.methods
-    .initialize(usdcMint)
-    .accounts({
-      admin: admin.publicKey,
-      config: configPda,
-      systemProgram: SystemProgram.programId,
-    } as any)
-    .rpc();
+  // On devnet, config/registry may already exist from a prior run — skip if so
+  const configInfo = await conn.getAccountInfo(configPda);
+  if (configInfo) {
+    console.log(`   ⏭️  Config already exists — skipping initialize`);
+    // Re-initialize with the fresh USDC mint for this run
+    // We need a fresh config for our new USDC mint, so we use a unique approach:
+    // On devnet, we can't re-init, so we'll just note it
+    console.log(`   ⚠️  Using existing config (USDC mint from prior run)`);
+    // Read existing config to get the USDC mint it uses
+  } else {
+    await program.methods
+      .initialize(usdcMint)
+      .accounts({
+        admin: admin.publicKey,
+        config: configPda,
+        systemProgram: SystemProgram.programId,
+      } as any)
+      .rpc();
+    console.log(`   ✅ Config initialized: ${configPda.toBase58()}`);
+  }
 
-  await program.methods
-    .initRegistry()
-    .accounts({
-      admin: admin.publicKey,
-      config: configPda,
-      marketRegistry: registryPda,
-      systemProgram: SystemProgram.programId,
-    } as any)
-    .rpc();
+  const registryInfo = await conn.getAccountInfo(registryPda);
+  if (registryInfo) {
+    console.log(`   ⏭️  Registry already exists — skipping initRegistry`);
+  } else {
+    await program.methods
+      .initRegistry()
+      .accounts({
+        admin: admin.publicKey,
+        config: configPda,
+        marketRegistry: registryPda,
+        systemProgram: SystemProgram.programId,
+      } as any)
+      .rpc();
+    console.log(`   ✅ Registry initialized: ${registryPda.toBase58()}`);
+  }
 
   console.log(`   ✅ Config PDA:   ${configPda.toBase58()}`);
   console.log(`   ✅ Registry PDA: ${registryPda.toBase58()}`);
@@ -211,10 +293,24 @@ async function main() {
   // ──────────────────────────────────────────────────────────
   console.log('\n📊 Step 2: Creating markets...\n');
 
+  // On devnet, use a time-based unique date to avoid PDA collisions with prior runs.
+  // Generate a valid YYYYMMDD in 2025 (always in the past, so settlement time checks pass).
+  let demoDate: number;
+  if (isDevnet) {
+    const seed = Date.now() % 336;
+    const month = Math.floor(seed / 28) + 1;  // 1–12
+    const day = (seed % 28) + 1;              // 1–28 (valid for every month)
+    demoDate = 20250000 + month * 100 + day;
+  } else {
+    demoDate = 20260306;
+  }
+  const dd = String(demoDate);
+  const dateStr = `${dd.slice(0,4)}-${dd.slice(4,6)}-${dd.slice(6,8)}`;
+
   // Market 1: AAPL > $230 (will settle Yes wins — price closes above strike)
-  const aapl = derivePDAs("AAPL", new BN(23000), 20260306, program.programId);
+  const aapl = derivePDAs("AAPL", new BN(23000), demoDate, program.programId);
   // Market 2: TSLA > $350 (will settle No wins — price closes below strike)
-  const tsla = derivePDAs("TSLA", new BN(35000), 20260306, program.programId);
+  const tsla = derivePDAs("TSLA", new BN(35000), demoDate, program.programId);
 
   // Helper to fully initialize a market
   async function initMarket(
@@ -231,6 +327,7 @@ async function main() {
         tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId,
       } as any)
       .rpc();
+    await throttle();
 
     await program.methods
       .initOrderbook()
@@ -240,6 +337,7 @@ async function main() {
         tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId,
       } as any)
       .rpc();
+    await throttle();
 
     await program.methods
       .initEscrowYes()
@@ -249,6 +347,7 @@ async function main() {
         tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId,
       } as any)
       .rpc();
+    await throttle();
 
     await program.methods
       .initBidEscrow()
@@ -258,6 +357,7 @@ async function main() {
         tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId,
       } as any)
       .rpc();
+    await throttle();
 
     await program.methods
       .registerMarket()
@@ -267,14 +367,15 @@ async function main() {
         systemProgram: SystemProgram.programId,
       } as any)
       .rpc();
+    await throttle();
   }
 
-  await initMarket("AAPL", new BN(23000), 20260306, aapl);
-  console.log(`   ✅ Market 1: "Will AAPL close above $230.00 on 2026-03-06?" `);
+  await initMarket("AAPL", new BN(23000), demoDate, aapl);
+  console.log(`   ✅ Market 1: "Will AAPL close above $230.00 on ${dateStr}?" `);
   console.log(`      PDA: ${aapl.market.toBase58()}`);
 
-  await initMarket("TSLA", new BN(35000), 20260306, tsla);
-  console.log(`   ✅ Market 2: "Will TSLA close above $350.00 on 2026-03-06?"`);
+  await initMarket("TSLA", new BN(35000), demoDate, tsla);
+  console.log(`   ✅ Market 2: "Will TSLA close above $350.00 on ${dateStr}?"`);
   console.log(`      PDA: ${tsla.market.toBase58()}`);
 
   const registry = await program.account.marketRegistry.fetch(registryPda);
@@ -282,11 +383,17 @@ async function main() {
 
   // Create token accounts for all users on AAPL market
   const aliceYes = (await getOrCreateAssociatedTokenAccount(conn, (admin as any).payer, aapl.yesMint, alice.publicKey)).address;
+  await throttle();
   const aliceNo = (await getOrCreateAssociatedTokenAccount(conn, (admin as any).payer, aapl.noMint, alice.publicKey)).address;
+  await throttle();
   const bobYes = (await getOrCreateAssociatedTokenAccount(conn, (admin as any).payer, aapl.yesMint, bob.publicKey)).address;
+  await throttle();
   const bobNo = (await getOrCreateAssociatedTokenAccount(conn, (admin as any).payer, aapl.noMint, bob.publicKey)).address;
+  await throttle();
   const charlieYes = (await getOrCreateAssociatedTokenAccount(conn, (admin as any).payer, aapl.yesMint, charlie.publicKey)).address;
+  await throttle();
   const charlieNo = (await getOrCreateAssociatedTokenAccount(conn, (admin as any).payer, aapl.noMint, charlie.publicKey)).address;
+  await throttle();
 
   // ──────────────────────────────────────────────────────────
   // Step 3: Charlie (Market Maker) Mints Pairs
@@ -303,6 +410,7 @@ async function main() {
     } as any)
     .signers([charlie])
     .rpc();
+  await throttle();
 
   let vaultBal = await bal(conn, aapl.vault);
   console.log(`   ✅ Deposited: $10.00 USDC → 10 Yes + 10 No tokens`);
@@ -324,6 +432,7 @@ async function main() {
     } as any)
     .signers([charlie])
     .rpc();
+  await throttle();
 
   let ob = await program.account.orderBook.fetch(aapl.orderbook);
   console.log(`   ✅ Resting ASK: 5 Yes @ $0.65 (order_id: ${ob.orders[0].orderId.toNumber()})`);
@@ -350,6 +459,7 @@ async function main() {
     ])
     .signers([alice])
     .rpc();
+  await throttle();
 
   const aliceUsdcAfter = await bal(conn, aliceUsdc);
   const aliceYesBal = await bal(conn, aliceYes);
@@ -629,10 +739,10 @@ async function main() {
   // ──────────────────────────────────────────────────────────
   console.log("\n➕ Step 12: ADD STRIKE — Admin adds AAPL > $250 intraday...\n");
 
-  const aapl250 = derivePDAs("AAPL", new BN(25000), 20260306, program.programId);
+  const aapl250 = derivePDAs("AAPL", new BN(25000), demoDate, program.programId);
 
   await (program.methods as any)
-    .addStrike("AAPL", new BN(25000), 20260306)
+    .addStrike("AAPL", new BN(25000), demoDate)
     .accounts({
       admin: admin.publicKey, config: configPda, market: aapl250.market,
       yesMint: aapl250.yesMint, noMint: aapl250.noMint,
@@ -640,7 +750,7 @@ async function main() {
     } as any)
     .rpc();
 
-  console.log(`   ✅ New strike: "Will AAPL close above $250.00 on 2026-03-06?"`);
+  console.log(`   ✅ New strike: "Will AAPL close above $250.00 on ${dateStr}?"`);
   console.log(`   📊 PDA: ${aapl250.market.toBase58()}`);
 
   // ──────────────────────────────────────────────────────────
@@ -719,17 +829,28 @@ async function main() {
   console.log("\n🔧 Step 14: ADMIN OVERRIDE — Time delay enforcement...\n");
 
   // Create a future-dated market to test time delay
-  const futureMarket = derivePDAs("NVDA", new BN(15000), 20270101, program.programId);
-  await program.methods
-    .createMarket("NVDA", new BN(15000), 20270101)
-    .accounts({
-      admin: admin.publicKey, config: configPda, market: futureMarket.market,
-      yesMint: futureMarket.yesMint, noMint: futureMarket.noMint,
-      tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId,
-    } as any)
-    .rpc();
+  // Use a unique future date per run to avoid devnet PDA collisions
+  const futureDate = isDevnet
+    ? 20270101 + (Date.now() % 300) + 1 // unique future date per run
+    : 20270101;
+  const futureMarket = derivePDAs("NVDA", new BN(15000), futureDate, program.programId);
 
-  // Admin override should fail — hasn't reached 5 PM ET on Jan 1, 2027
+  // On devnet, check if market already exists (prior run collision)
+  const futureMarketInfo = await conn.getAccountInfo(futureMarket.market);
+  if (futureMarketInfo) {
+    console.log(`   ⏭️  Future market already exists — using existing`);
+  } else {
+    await program.methods
+      .createMarket("NVDA", new BN(15000), futureDate)
+      .accounts({
+        admin: admin.publicKey, config: configPda, market: futureMarket.market,
+        yesMint: futureMarket.yesMint, noMint: futureMarket.noMint,
+        tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId,
+      } as any)
+      .rpc();
+  }
+
+  // Admin override should fail — hasn't reached 5 PM ET on the future date
   try {
     await (program.methods as any)
       .adminSettleOverride(new BN(14500))
@@ -748,7 +869,9 @@ async function main() {
   console.log("\n⚖️  Step 15: SETTLE TSLA — closes at $340.00 (No wins!)...\n");
 
   // Mint some TSLA pairs first so redemption is meaningful
+  await throttle();
   const charlieYesTsla = (await getOrCreateAssociatedTokenAccount(conn, (admin as any).payer, tsla.yesMint, charlie.publicKey)).address;
+  await throttle();
   const charlieNoTsla = (await getOrCreateAssociatedTokenAccount(conn, (admin as any).payer, tsla.noMint, charlie.publicKey)).address;
 
   await program.methods
