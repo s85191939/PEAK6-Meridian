@@ -237,6 +237,7 @@ async function main() {
             config: configPda,
             marketRegistry: registryPda,
             market: marketPda,
+            systemProgram: SystemProgram.programId,
           } as any)
           .rpc();
 

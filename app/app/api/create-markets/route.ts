@@ -427,7 +427,7 @@ export async function POST(request: NextRequest) {
             .signers([adminKeypair])
             .rpc();
 
-          // 5. Register market
+          // 5. Register market (realloc grows registry as needed)
           await program.methods
             .registerMarket()
             .accounts({
@@ -435,6 +435,7 @@ export async function POST(request: NextRequest) {
               config: configPda,
               market: marketPda,
               marketRegistry: registryPda,
+              systemProgram: PublicKey.default,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             } as any)
             .signers([adminKeypair])

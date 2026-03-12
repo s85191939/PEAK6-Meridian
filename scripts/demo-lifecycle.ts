@@ -264,6 +264,7 @@ async function main() {
       .accounts({
         admin: admin.publicKey, config: configPda,
         marketRegistry: registryPda, market: pdas.market,
+        systemProgram: SystemProgram.programId,
       } as any)
       .rpc();
   }

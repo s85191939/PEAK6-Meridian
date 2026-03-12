@@ -4,11 +4,11 @@
   "crons": [
     {
       "path": "/api/create-markets",
-      "schedule": "30 13 * * 1-5"
+      "schedule": "30 12 * * 1-5"
     },
     {
       "path": "/api/settle-markets",
-      "schedule": "5 21 * * 1-5"
+      "schedule": "5 20 * * 1-5"
     }
   ]
 }

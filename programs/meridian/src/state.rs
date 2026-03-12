@@ -51,7 +51,7 @@ pub struct Market {
 }
 
 /// On-chain registry of all market pubkeys so the frontend can enumerate them.
-pub const MAX_MARKETS: usize = 100;
+pub const MAX_MARKETS: usize = 500;
 
 #[account]
 #[derive(InitSpace)]
