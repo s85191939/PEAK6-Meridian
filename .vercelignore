@@ -1,0 +1,6 @@
+.anchor
+target
+test-ledger
+node_modules
+demo-wallet.json
+*.so

@@ -34,6 +34,22 @@ const ADMIN_SECRET = [236,158,41,219,108,151,179,250,69,236,178,96,161,156,243,5
 const MAG7_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"];
 const STRIKE_OFFSETS = [-0.09, -0.06, -0.03, 0.03, 0.06, 0.09];
 
+/**
+ * Pyth Network Price Feed IDs for MAG7 US Equities
+ * Same feeds used by settle-markets — real, production-grade prices.
+ */
+const PYTH_FEED_IDS: Record<string, string> = {
+  AAPL: "0x49f6b65cb1de6b10eaf75e7c03ca029c306d0357e91b5311b175084a5ad55688",
+  MSFT: "0xd0ca23c1cc005e004ccf1db5bf76aeb6a49218f43dac3d4b275e92de12ded4d1",
+  GOOGL: "0x5a48c03e9b9cb337801073ed9d166817473697efff0d138874e0f6a33d6d5aa6",
+  AMZN: "0xb5d0e0fa58a1f8b81498ae670ce93c872d14434b72c364885d4fa1b257cbb07a",
+  NVDA: "0xb1073854ed24cbc755dc527418f52b7d271f6cc967bbf8d8129112b18860a593",
+  META: "0x78a3e3b8e676a8f73c439f5d749737034b139bbbe899ba5775216fba596607fe",
+  TSLA: "0x16dad506d7db8da01c87581c87ca897a012a153557d4d578c3b9c9e1bc0632f1",
+};
+
+const HERMES_URL = "https://hermes.pyth.network";
+
 function getDateInt(): number {
   const now = new Date();
   const etStr = now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
@@ -84,7 +100,60 @@ function computeStrikes(prevClose: number): number[] {
   return Array.from(strikes).sort((a, b) => a - b);
 }
 
-async function fetchPrevClosePrices(): Promise<Record<string, number>> {
+/**
+ * PRIMARY: Fetch current/latest prices from Pyth Network Hermes API.
+ * Used to calculate strike prices for new markets.
+ * Returns prices in USD cents.
+ */
+async function fetchPythPrices(): Promise<Record<string, number>> {
+  const prices: Record<string, number> = {};
+
+  const feedIds = MAG7_TICKERS.map((t) => PYTH_FEED_IDS[t]);
+  const params = feedIds.map((id) => `ids[]=${id}`).join("&");
+  const url = `${HERMES_URL}/v2/updates/price/latest?${params}`;
+
+  try {
+    const resp = await fetch(url, {
+      headers: { Accept: "application/json" },
+    });
+
+    if (!resp.ok) {
+      console.error(`Pyth Hermes API returned ${resp.status}`);
+      return prices;
+    }
+
+    const data = await resp.json();
+    const parsedPrices = data?.parsed || [];
+
+    for (const parsed of parsedPrices) {
+      const feedId = "0x" + parsed.id;
+      const ticker = MAG7_TICKERS.find((t) => PYTH_FEED_IDS[t] === feedId);
+      if (!ticker) continue;
+
+      const priceData = parsed.price;
+      if (!priceData) continue;
+
+      const rawPrice = Number(priceData.price);
+      const expo = priceData.expo;
+      const priceUsd = rawPrice * Math.pow(10, expo);
+      const priceCents = Math.round(priceUsd * 100);
+
+      if (priceCents > 0) {
+        prices[ticker] = priceCents;
+      }
+    }
+  } catch (err) {
+    console.error("Pyth Hermes API failed:", err);
+  }
+
+  return prices;
+}
+
+/**
+ * FALLBACK: Yahoo Finance for previous closing prices.
+ * Used when Pyth is unavailable.
+ */
+async function fetchYahooPrices(): Promise<Record<string, number>> {
   const prices: Record<string, number> = {};
 
   for (const ticker of MAG7_TICKERS) {
@@ -97,17 +166,47 @@ async function fetchPrevClosePrices(): Promise<Record<string, number>> {
         const data = await resp.json();
         const result = data?.spark?.result?.[0];
         const close = result?.response?.[0]?.meta?.chartPreviousClose ||
-                       result?.response?.[0]?.meta?.previousClose;
+                       result?.response?.[0]?.meta?.previousClose ||
+                       result?.response?.[0]?.meta?.regularMarketPrice;
         if (close && close > 0) {
           prices[ticker] = Math.round(close * 100);
         }
       }
     } catch {
-      console.error(`Failed to fetch prev close for ${ticker}`);
+      console.error(`Yahoo fallback failed for ${ticker}`);
     }
   }
 
   return prices;
+}
+
+/**
+ * Fetch prices: Pyth primary, Yahoo fallback.
+ * Returns prices in USD cents for strike calculation.
+ */
+async function fetchPrevClosePrices(): Promise<Record<string, number>> {
+  console.log("Fetching prices from Pyth (primary)...");
+  const pythPrices = await fetchPythPrices();
+
+  if (Object.keys(pythPrices).length >= MAG7_TICKERS.length) {
+    console.log("All prices from Pyth:", pythPrices);
+    return pythPrices;
+  }
+
+  // Fill gaps from Yahoo
+  console.log(`Pyth returned ${Object.keys(pythPrices).length}/${MAG7_TICKERS.length}, trying Yahoo fallback...`);
+  const yahooPrices = await fetchYahooPrices();
+
+  const merged = { ...pythPrices };
+  for (const ticker of MAG7_TICKERS) {
+    if (!merged[ticker] && yahooPrices[ticker]) {
+      merged[ticker] = yahooPrices[ticker];
+      console.log(`${ticker}: using Yahoo fallback price`);
+    }
+  }
+
+  console.log("Merged prices:", merged);
+  return merged;
 }
 
 export async function POST(request: NextRequest) {
