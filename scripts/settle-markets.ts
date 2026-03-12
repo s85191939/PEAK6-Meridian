@@ -34,7 +34,7 @@ const CLOSING_PRICES: Record<string, number> = {
 };
 
 // Same strike computation as create-markets
-const STRIKE_OFFSETS = [-0.09, -0.06, -0.03, 0.03, 0.06, 0.09];
+const STRIKE_OFFSETS = [-0.09, -0.06, -0.03, 0, 0.03, 0.06, 0.09];
 const MAG7_PREV_CLOSE: Record<string, number> = {
   AAPL: 23500,
   MSFT: 42000,

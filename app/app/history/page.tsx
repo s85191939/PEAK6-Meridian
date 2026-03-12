@@ -146,34 +146,50 @@ export default function HistoryPage() {
   const divisor = Math.pow(10, PRICE_DECIMALS);
   const qtyDivisor = Math.pow(10, 6);
 
-  const getStatusBadge = (entry: HistoryEntry) => {
-    if (entry.cancelled) {
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-gray-700/50 px-2 py-0.5 text-[11px] font-semibold text-gray-400">
-          Cancelled
-        </span>
-      );
-    }
+  const getOrderStatus = (entry: HistoryEntry): "cancelled" | "filled" | "expired" | "partial" | "open" => {
+    if (entry.cancelled) return "cancelled";
     const remaining = entry.quantity.sub(entry.filled);
-    if (remaining.isZero()) {
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-400">
-          Filled
-        </span>
-      );
+    if (remaining.isZero()) return "filled";
+    // If market is settled and order wasn't fully filled, it expired
+    if (entry.settled) return "expired";
+    if (entry.filled.gt(new BN(0))) return "partial";
+    return "open";
+  };
+
+  const getStatusBadge = (entry: HistoryEntry) => {
+    const status = getOrderStatus(entry);
+    switch (status) {
+      case "cancelled":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-gray-700/50 px-2 py-0.5 text-[11px] font-semibold text-gray-400">
+            Cancelled
+          </span>
+        );
+      case "filled":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-400">
+            Filled
+          </span>
+        );
+      case "expired":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2 py-0.5 text-[11px] font-semibold text-orange-400">
+            Expired
+          </span>
+        );
+      case "partial":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/10 px-2 py-0.5 text-[11px] font-semibold text-yellow-400">
+            Partial
+          </span>
+        );
+      case "open":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[11px] font-semibold text-blue-400">
+            Open
+          </span>
+        );
     }
-    if (entry.filled.gt(new BN(0))) {
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/10 px-2 py-0.5 text-[11px] font-semibold text-yellow-400">
-          Partial
-        </span>
-      );
-    }
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[11px] font-semibold text-blue-400">
-        Open
-      </span>
-    );
   };
 
   if (!publicKey) {
@@ -259,7 +275,7 @@ export default function HistoryPage() {
       ) : (
         <>
           {/* Summary stats */}
-          <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-5">
             <div className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-4">
               <span className="text-xs text-gray-500">Total Orders</span>
               <p className="mt-1 font-mono text-lg font-bold text-white">{entries.length}</p>
@@ -267,19 +283,25 @@ export default function HistoryPage() {
             <div className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-4">
               <span className="text-xs text-gray-500">Filled</span>
               <p className="mt-1 font-mono text-lg font-bold text-emerald-400">
-                {entries.filter((e) => e.quantity.sub(e.filled).isZero() && !e.cancelled).length}
+                {entries.filter((e) => getOrderStatus(e) === "filled").length}
               </p>
             </div>
             <div className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-4">
               <span className="text-xs text-gray-500">Open</span>
               <p className="mt-1 font-mono text-lg font-bold text-blue-400">
-                {entries.filter((e) => !e.cancelled && e.filled.lt(e.quantity)).length}
+                {entries.filter((e) => getOrderStatus(e) === "open" || getOrderStatus(e) === "partial").length}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-4">
+              <span className="text-xs text-gray-500">Expired</span>
+              <p className="mt-1 font-mono text-lg font-bold text-orange-400">
+                {entries.filter((e) => getOrderStatus(e) === "expired").length}
               </p>
             </div>
             <div className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-4">
               <span className="text-xs text-gray-500">Cancelled</span>
               <p className="mt-1 font-mono text-lg font-bold text-gray-400">
-                {entries.filter((e) => e.cancelled).length}
+                {entries.filter((e) => getOrderStatus(e) === "cancelled").length}
               </p>
             </div>
           </div>
@@ -289,7 +311,7 @@ export default function HistoryPage() {
             {/* Table header */}
             <div className="hidden border-b border-gray-800/60 sm:grid sm:grid-cols-7 sm:gap-2 sm:px-5 sm:py-3">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Market</span>
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Side</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Type</span>
               <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Price</span>
               <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Quantity</span>
               <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Filled</span>
@@ -333,7 +355,7 @@ export default function HistoryPage() {
                       </div>
                       <div className="flex items-center gap-4 text-xs text-gray-400">
                         <span className={entry.isBid ? "font-semibold text-emerald-400" : "font-semibold text-red-400"}>
-                          {entry.isBid ? "BID" : "ASK"}
+                          {entry.isBid ? "BUY YES" : "SELL YES"}
                         </span>
                         <span>@ ${(entry.price.toNumber() / divisor).toFixed(2)}</span>
                         <span>Qty: {(entry.quantity.toNumber() / qtyDivisor).toFixed(0)}</span>
@@ -356,7 +378,7 @@ export default function HistoryPage() {
                         </div>
                       </div>
                       <span className={`text-xs font-bold ${entry.isBid ? "text-emerald-400" : "text-red-400"}`}>
-                        {entry.isBid ? "BID" : "ASK"}
+                        {entry.isBid ? "BUY YES" : "SELL YES"}
                       </span>
                       <span className="font-mono text-xs text-gray-300">
                         ${(entry.price.toNumber() / divisor).toFixed(2)}

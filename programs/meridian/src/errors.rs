@@ -41,12 +41,18 @@ pub enum MeridianError {
     #[msg("Oracle price is stale")]
     StalePriceData,
 
+    /// Reserved for on-chain Pyth oracle integration (mainnet).
+    /// Currently, confidence is checked off-chain by the settlement service
+    /// before submitting the settlement tx (MAX_CONFIDENCE_RATIO = 2%).
     #[msg("Oracle confidence interval too wide")]
     LowConfidencePrice,
 
     #[msg("Settlement can only occur after market close")]
     TooEarlyToSettle,
 
+    /// Structural invariant: vault always holds exactly total_pairs_minted * 1_000_000.
+    /// Enforced structurally by mint_pair (deposits $1) and redeem (withdraws $1).
+    /// This error exists as a safety net for future runtime assertions.
     #[msg("Vault balance invariant violated: vault != total_pairs_minted * 1_000_000")]
     VaultInvariantViolated,
 

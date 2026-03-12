@@ -3,7 +3,7 @@
  *
  * Called by Vercel Cron at ~8:30 AM ET every trading day.
  * Fetches REAL previous closing prices from Yahoo Finance,
- * calculates strikes at +/-3%, +/-6%, +/-9% (rounded to $10, deduplicated),
+ * calculates strikes at ATM, +/-3%, +/-6%, +/-9% (rounded to $10, deduplicated),
  * and creates all markets + orderbooks on Solana devnet.
  *
  * Each market requires 5 transactions:
@@ -32,7 +32,7 @@ import { PROGRAM_ID, RPC_URL } from "@/lib/constants";
 const ADMIN_SECRET = [236,158,41,219,108,151,179,250,69,236,178,96,161,156,243,53,235,229,147,33,180,67,59,37,88,172,105,188,40,227,23,74,154,112,194,233,194,146,215,227,177,131,235,23,20,148,197,205,75,59,88,184,75,23,203,37,109,124,139,233,189,227,83,157];
 
 const MAG7_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"];
-const STRIKE_OFFSETS = [-0.09, -0.06, -0.03, 0.03, 0.06, 0.09];
+const STRIKE_OFFSETS = [-0.09, -0.06, -0.03, 0, 0.03, 0.06, 0.09];
 
 /**
  * Pyth Network Price Feed IDs for MAG7 US Equities

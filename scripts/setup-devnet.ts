@@ -30,7 +30,7 @@ const MAG7_STOCKS: Record<string, number> = {
   TSLA: 27500,
 };
 
-const STRIKE_OFFSETS = [-0.09, -0.06, -0.03, 0.03, 0.06, 0.09];
+const STRIKE_OFFSETS = [-0.09, -0.06, -0.03, 0, 0.03, 0.06, 0.09];
 
 function getDateInt(): number {
   const now = new Date();

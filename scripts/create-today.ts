@@ -18,7 +18,7 @@ const TICKERS: Record<string, number> = {
   TSLA: 27500,
 };
 
-const STRIKE_OFFSETS = [-0.06, -0.03, 0.03, 0.06];
+const STRIKE_OFFSETS = [-0.06, -0.03, 0, 0.03, 0.06];
 
 const USDC_MINT = new PublicKey("9L1fhmF2PbANM3XJE2527aZXh596EunDDdMYgZXYxntW");
 

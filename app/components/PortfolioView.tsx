@@ -91,8 +91,14 @@ export default function PortfolioView() {
 
       const marketPubkeys = registryAccount.markets as PublicKey[];
 
-      // Batch fetch ALL markets in 1 RPC call
-      const marketAccounts = await program.account.market.fetchMultiple(marketPubkeys);
+      // Batch fetch markets in chunks of 100 (Solana RPC limit)
+      const BATCH_SIZE = 100;
+      const marketAccounts: (any | null)[] = [];
+      for (let i = 0; i < marketPubkeys.length; i += BATCH_SIZE) {
+        const chunk = marketPubkeys.slice(i, i + BATCH_SIZE);
+        const results = await program.account.market.fetchMultiple(chunk);
+        marketAccounts.push(...results);
+      }
 
       // Derive all token ATAs for the user (Yes + No for each market)
       const atas: PublicKey[] = [];
@@ -108,8 +114,13 @@ export default function PortfolioView() {
         ataMap.push({ index: i, type: "yes" }, { index: i, type: "no" });
       }
 
-      // Batch fetch ALL token balances in 1 RPC call
-      const ataInfos = await connection.getMultipleAccountsInfo(atas);
+      // Batch fetch token balances in chunks of 100 (Solana RPC limit)
+      const ataInfos: (import("@solana/web3.js").AccountInfo<Buffer> | null)[] = [];
+      for (let i = 0; i < atas.length; i += BATCH_SIZE) {
+        const chunk = atas.slice(i, i + BATCH_SIZE);
+        const results = await connection.getMultipleAccountsInfo(chunk);
+        ataInfos.push(...results);
+      }
 
       // Parse balances and build positions
       const balances = new Map<number, { yesBalance: BN; noBalance: BN }>();
@@ -135,9 +146,14 @@ export default function PortfolioView() {
         }
       }
 
-      // Batch fetch orderbooks for all markets with positions
+      // Batch fetch orderbooks for all markets with positions (chunked)
       const orderbookPdas = positionIndices.map((i) => findOrderbookPda(marketPubkeys[i])[0]);
-      const orderbookAccounts = await program.account.orderBook.fetchMultiple(orderbookPdas);
+      const orderbookAccounts: (any | null)[] = [];
+      for (let i = 0; i < orderbookPdas.length; i += BATCH_SIZE) {
+        const chunk = orderbookPdas.slice(i, i + BATCH_SIZE);
+        const results = await program.account.orderBook.fetchMultiple(chunk);
+        orderbookAccounts.push(...results);
+      }
 
       const userPositions: Position[] = [];
       for (let j = 0; j < positionIndices.length; j++) {
@@ -151,7 +167,7 @@ export default function PortfolioView() {
         const orderbook = orderbookAccounts[j];
         if (orderbook) {
           const userOrders = (orderbook.orders as any[]).filter(
-            (o: any) => o.maker.equals(publicKey) && o.filled > 0
+            (o: any) => o.maker.equals(publicKey) && new BN(o.filled).gt(new BN(0))
           );
 
           if (userOrders.length > 0) {
@@ -272,45 +288,48 @@ export default function PortfolioView() {
     [publicKey, signTransaction, connection, sendTransaction, fetchPositions]
   );
 
-  // Calculate portfolio value for each position
-  const getPositionValue = (pos: Position): {
-    currentValue: number; maxPayout: number; contracts: number;
-    pnl: number | null; pnlPercent: number | null; entryPrice: number | null;
-  } => {
-    const yesQty = pos.yesBalance.toNumber() / 1_000_000;
-    const noQty = pos.noBalance.toNumber() / 1_000_000;
-    const contracts = Math.max(yesQty, noQty);
-
-    if (pos.settled) {
-      // Settled: winning tokens worth $1, losing worth $0
-      const yesValue = pos.outcomeYesWins ? yesQty : 0;
-      const noValue = pos.outcomeYesWins ? 0 : noQty;
-      const currentValue = yesValue + noValue;
-      const pnl = pos.costBasis != null ? currentValue - pos.costBasis : null;
-      const pnlPercent = pos.costBasis != null && pos.costBasis > 0
-        ? (pnl! / pos.costBasis) * 100 : null;
-      return { currentValue, maxPayout: currentValue, contracts, pnl, pnlPercent, entryPrice: pos.entryPrice };
-    }
-
-    // Active: max payout = contracts × $1.00
-    const maxPayout = contracts;
-    // Current value estimated at $0.50/contract (midpoint) if no entry price
-    const currentValue = pos.costBasis ?? contracts * 0.5;
-    const pnl = pos.costBasis != null ? maxPayout - pos.costBasis : null;
-    const pnlPercent = pos.costBasis != null && pos.costBasis > 0
-      ? (pnl! / pos.costBasis) * 100 : null;
-    return { currentValue, maxPayout, contracts, pnl, pnlPercent, entryPrice: pos.entryPrice };
+  // Helper: determine if user won this position
+  const didWin = (pos: Position): boolean | null => {
+    if (!pos.settled) return null; // still active
+    const holdingYes = pos.yesBalance.gt(new BN(0));
+    const holdingNo = pos.noBalance.gt(new BN(0));
+    if (holdingYes && pos.outcomeYesWins) return true;
+    if (holdingNo && !pos.outcomeYesWins) return true;
+    return false;
   };
 
-  const totalMaxPayout = positions.reduce(
-    (sum, pos) => sum + getPositionValue(pos).maxPayout,
-    0
-  );
-  const totalCostBasis = positions.reduce(
-    (sum, pos) => sum + (pos.costBasis ?? 0),
-    0
-  );
-  const totalPnl = totalMaxPayout - totalCostBasis;
+  // Helper: get payout amount
+  const getPayout = (pos: Position): number => {
+    if (!pos.settled) return 0;
+    const yesQty = pos.yesBalance.toNumber() / 1_000_000;
+    const noQty = pos.noBalance.toNumber() / 1_000_000;
+    if (pos.outcomeYesWins) return yesQty; // Yes tokens pay $1 each
+    return noQty; // No tokens pay $1 each
+  };
+
+  // Helper: contracts count
+  const getContracts = (pos: Position): number => {
+    const yesQty = pos.yesBalance.toNumber() / 1_000_000;
+    const noQty = pos.noBalance.toNumber() / 1_000_000;
+    return Math.max(yesQty, noQty);
+  };
+
+  // Summary stats
+  const totalWinnings = positions.reduce((sum, pos) => sum + getPayout(pos), 0);
+  const winnersCount = positions.filter((p) => didWin(p) === true).length;
+  const losersCount = positions.filter((p) => didWin(p) === false).length;
+  const activeCount = positions.filter((p) => didWin(p) === null).length;
+
+  // Sort: winners first (redeemable), then active, then losers
+  const sortedPositions = [...positions].sort((a, b) => {
+    const aWin = didWin(a);
+    const bWin = didWin(b);
+    if (aWin === true && bWin !== true) return -1;
+    if (bWin === true && aWin !== true) return 1;
+    if (aWin === null && bWin !== null) return -1;
+    if (bWin === null && aWin !== null) return 1;
+    return 0;
+  });
 
   if (!publicKey) {
     return (
@@ -353,32 +372,8 @@ export default function PortfolioView() {
 
   return (
     <div className="space-y-6">
-      {/* Portfolio Summary Header */}
-      <div className="grid grid-cols-4 gap-4">
-        <div className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-5">
-          <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
-            Max Payout
-          </span>
-          <p className="mt-1 font-mono text-2xl font-bold text-emerald-400">
-            ${totalMaxPayout.toFixed(2)}
-          </p>
-          <p className="mt-0.5 text-[11px] text-gray-600">
-            if all positions win
-          </p>
-        </div>
-        <div className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-5">
-          <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
-            P&L
-          </span>
-          <p className={`mt-1 font-mono text-2xl font-bold ${
-            totalPnl >= 0 ? "text-emerald-400" : "text-red-400"
-          }`}>
-            {totalPnl >= 0 ? "+" : ""}{totalCostBasis > 0 ? `$${totalPnl.toFixed(2)}` : "—"}
-          </p>
-          <p className="mt-0.5 text-[11px] text-gray-600">
-            {totalCostBasis > 0 ? `cost basis $${totalCostBasis.toFixed(2)}` : "no trades yet"}
-          </p>
-        </div>
+      {/* Portfolio Summary — simple 3 cards */}
+      <div className="grid grid-cols-3 gap-4">
         <div className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-5">
           <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
             USDC Balance
@@ -392,13 +387,29 @@ export default function PortfolioView() {
         </div>
         <div className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-5">
           <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+            Winnings to Collect
+          </span>
+          <p className="mt-1 font-mono text-2xl font-bold text-emerald-400">
+            ${totalWinnings.toFixed(2)}
+          </p>
+          <p className="mt-0.5 text-[11px] text-gray-600">
+            {winnersCount > 0 ? `${winnersCount} winning position${winnersCount > 1 ? "s" : ""}` : "no wins yet"}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-gray-800/60 bg-gray-900/50 p-5">
+          <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
             Positions
           </span>
           <p className="mt-1 font-mono text-2xl font-bold text-white">
             {positions.length}
           </p>
           <p className="mt-0.5 text-[11px] text-gray-600">
-            active contracts
+            {activeCount > 0 && `${activeCount} active`}
+            {activeCount > 0 && (winnersCount > 0 || losersCount > 0) && " · "}
+            {winnersCount > 0 && `${winnersCount} won`}
+            {winnersCount > 0 && losersCount > 0 && " · "}
+            {losersCount > 0 && `${losersCount} lost`}
+            {activeCount === 0 && winnersCount === 0 && losersCount === 0 && "no positions"}
           </p>
         </div>
       </div>
@@ -458,173 +469,147 @@ export default function PortfolioView() {
             Start trading to see your positions here.
           </p>
           <Link
-            href="/"
+            href="/markets"
             className="rounded-xl bg-yellow-500 px-5 py-2.5 text-sm font-bold text-black shadow-lg shadow-yellow-500/20 hover:bg-yellow-400"
           >
             Explore Markets
           </Link>
         </div>
       ) : (
-        <div className="space-y-4">
-          {positions.map((pos) => {
+        <div className="space-y-3">
+          {sortedPositions.map((pos) => {
             const tickerInfo = MAG7_TICKERS[pos.ticker];
-            const canRedeem = pos.settled;
+            const won = didWin(pos);
+            const payout = getPayout(pos);
+            const contracts = getContracts(pos);
+            const holdingYes = pos.yesBalance.gt(new BN(0));
+            const holdingNo = pos.noBalance.gt(new BN(0));
             const winningToken = pos.outcomeYesWins ? "yes" : "no";
-            const posValue = getPositionValue(pos);
+            const strikeStr = formatStrikePrice(pos.strikePrice);
+
+            // Plain English prediction
+            const prediction = holdingYes
+              ? `${pos.ticker} closes above ${strikeStr}`
+              : `${pos.ticker} closes below ${strikeStr}`;
+
+            // Card styling based on outcome
+            const cardBorder = won === true
+              ? "border-emerald-500/30"
+              : won === false
+                ? "border-gray-800/40"
+                : "border-yellow-500/20";
+            const cardBg = won === false ? "bg-gray-900/30" : "bg-gray-900/50";
+            const cardOpacity = won === false ? "opacity-60" : "";
 
             return (
               <div
                 key={pos.marketPubkey.toBase58()}
-                className="animate-fade-in rounded-2xl border border-gray-800/60 bg-gray-900/50 p-5"
+                className={`animate-fade-in rounded-2xl border ${cardBorder} ${cardBg} ${cardOpacity} p-5 transition-all`}
               >
-                <div className="mb-4 flex items-start justify-between">
+                {/* Top row: ticker + outcome badge */}
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div
                       className="flex h-10 w-10 items-center justify-center rounded-xl text-xs font-bold text-white shadow-lg"
-                      style={{
-                        backgroundColor: tickerInfo?.color ?? "#6B7280",
-                      }}
+                      style={{ backgroundColor: tickerInfo?.color ?? "#6B7280" }}
                     >
                       {pos.ticker.slice(0, 2)}
                     </div>
                     <div>
-                      <Link
-                        href={`/trade/${pos.marketPubkey.toBase58()}`}
-                        className="text-sm font-bold text-white hover:text-yellow-400 transition-colors"
-                      >
-                        {pos.ticker} &gt; {formatStrikePrice(pos.strikePrice)}
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        <Link
+                          href={`/trade/${pos.marketPubkey.toBase58()}`}
+                          className="text-sm font-bold text-white hover:text-yellow-400 transition-colors"
+                        >
+                          {pos.ticker} &gt; {strikeStr}
+                        </Link>
+                      </div>
                       <p className="text-xs text-gray-500">
-                        Expires {formatMarketDate(pos.date).toLowerCase()}
+                        {formatMarketDate(pos.date)} · {contracts} contract{contracts !== 1 ? "s" : ""}
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    {pos.settled ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-700/50 px-2.5 py-1 text-[11px] font-semibold text-gray-300">
-                        <span className="h-1.5 w-1.5 rounded-full bg-gray-400" />
-                        {pos.outcomeYesWins ? "Yes Won" : "No Won"}
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-yellow-500/10 px-2.5 py-1 text-[11px] font-semibold text-yellow-400 ring-1 ring-inset ring-yellow-500/20">
-                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-yellow-400" />
-                        Active
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Position details */}
-                <div className="mb-4 grid grid-cols-5 gap-3">
-                  <div className="rounded-xl bg-gray-800/30 p-3 ring-1 ring-inset ring-gray-700/30">
-                    <span className="text-[11px] font-medium text-gray-500">
-                      {pos.yesBalance.gt(new BN(0)) && pos.noBalance.gt(new BN(0))
-                        ? "Contracts"
-                        : pos.yesBalance.gt(new BN(0))
-                          ? "Yes Contracts"
-                          : "No Contracts"}
+                  {/* Big outcome badge */}
+                  {won === true && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1.5 text-xs font-bold text-emerald-400 ring-1 ring-inset ring-emerald-500/25">
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                      </svg>
+                      Won ${payout.toFixed(2)}
                     </span>
-                    <p className="font-mono text-sm font-bold text-white">
-                      {posValue.contracts.toFixed(0)}
-                    </p>
-                  </div>
-                  <div className="rounded-xl bg-gray-800/30 p-3 ring-1 ring-inset ring-gray-700/30">
-                    <span className="text-[11px] font-medium text-gray-500">Side</span>
-                    <p className={`font-mono text-sm font-bold ${
-                      pos.yesBalance.gt(new BN(0)) ? "text-emerald-400" : "text-red-400"
-                    }`}>
-                      {pos.yesBalance.gt(new BN(0)) && pos.noBalance.gt(new BN(0))
-                        ? "Yes + No"
-                        : pos.yesBalance.gt(new BN(0))
-                          ? "Yes ↑"
-                          : "No ↓"}
-                    </p>
-                  </div>
-                  <div className="rounded-xl bg-gray-800/30 p-3 ring-1 ring-inset ring-gray-700/30">
-                    <span className="text-[11px] font-medium text-gray-500">Entry Price</span>
-                    <p className="font-mono text-sm font-bold text-white">
-                      {posValue.entryPrice != null ? `$${posValue.entryPrice.toFixed(2)}` : "—"}
-                    </p>
-                  </div>
-                  <div className="rounded-xl bg-gray-800/30 p-3 ring-1 ring-inset ring-gray-700/30">
-                    <span className="text-[11px] font-medium text-gray-500">
-                      {pos.settled ? "Payout" : "Max Payout"}
+                  )}
+                  {won === false && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-700/40 px-3 py-1.5 text-xs font-semibold text-gray-500">
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      Lost
                     </span>
-                    <p className="font-mono text-sm font-bold text-emerald-400">
-                      ${posValue.maxPayout.toFixed(2)}
-                    </p>
-                  </div>
-                  <div className="rounded-xl bg-gray-800/30 p-3 ring-1 ring-inset ring-gray-700/30">
-                    <span className="text-[11px] font-medium text-gray-500">P&L</span>
-                    <p className={`font-mono text-sm font-bold ${
-                      posValue.pnl == null ? "text-gray-500"
-                        : posValue.pnl >= 0 ? "text-emerald-400" : "text-red-400"
-                    }`}>
-                      {posValue.pnl != null
-                        ? `${posValue.pnl >= 0 ? "+" : ""}$${posValue.pnl.toFixed(2)}`
-                        : "—"}
-                      {posValue.pnlPercent != null && (
-                        <span className="ml-1 text-[10px]">
-                          ({posValue.pnlPercent >= 0 ? "+" : ""}{posValue.pnlPercent.toFixed(0)}%)
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex gap-2">
-                  {canRedeem ? (
-                    <>
-                      {pos.yesBalance.gt(new BN(0)) && (
-                        <button
-                          onClick={() => handleRedeem(pos, "yes")}
-                          disabled={
-                            redeeming ===
-                            `${pos.marketPubkey.toBase58()}-yes`
-                          }
-                          className={`flex-1 rounded-xl py-2.5 text-sm font-bold transition-all ${
-                            winningToken === "yes"
-                              ? "bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-500"
-                              : "bg-gray-700/50 text-gray-400 hover:bg-gray-600/50"
-                          } disabled:opacity-40`}
-                        >
-                          {redeeming ===
-                          `${pos.marketPubkey.toBase58()}-yes`
-                            ? "Redeeming..."
-                            : `Redeem Yes (${(pos.yesBalance.toNumber() / 1_000_000).toFixed(0)})`}
-                        </button>
-                      )}
-                      {pos.noBalance.gt(new BN(0)) && (
-                        <button
-                          onClick={() => handleRedeem(pos, "no")}
-                          disabled={
-                            redeeming ===
-                            `${pos.marketPubkey.toBase58()}-no`
-                          }
-                          className={`flex-1 rounded-xl py-2.5 text-sm font-bold transition-all ${
-                            winningToken === "no"
-                              ? "bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-500"
-                              : "bg-gray-700/50 text-gray-400 hover:bg-gray-600/50"
-                          } disabled:opacity-40`}
-                        >
-                          {redeeming ===
-                          `${pos.marketPubkey.toBase58()}-no`
-                            ? "Redeeming..."
-                            : `Redeem No (${(pos.noBalance.toNumber() / 1_000_000).toFixed(0)})`}
-                        </button>
-                      )}
-                    </>
-                  ) : (
-                    <Link
-                      href={`/trade/${pos.marketPubkey.toBase58()}`}
-                      className="flex-1 rounded-xl bg-gray-800/50 py-2.5 text-center text-sm font-bold text-gray-300 ring-1 ring-inset ring-gray-700/30 hover:bg-gray-700/50 transition-all"
-                    >
-                      Trade
-                    </Link>
+                  )}
+                  {won === null && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-yellow-500/10 px-3 py-1.5 text-xs font-bold text-yellow-400 ring-1 ring-inset ring-yellow-500/20">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-yellow-400" />
+                      Waiting for result
+                    </span>
                   )}
                 </div>
+
+                {/* Prediction line — plain English */}
+                <div className="mt-3 flex items-center gap-2 rounded-xl bg-gray-800/30 px-4 py-2.5 ring-1 ring-inset ring-gray-700/20">
+                  <span className={`text-xs font-bold uppercase tracking-wide ${holdingYes ? "text-emerald-400" : "text-red-400"}`}>
+                    {holdingYes ? "YES" : "NO"}
+                  </span>
+                  <span className="text-sm text-gray-300">
+                    You predicted: <span className="font-medium text-white">{prediction}</span>
+                  </span>
+                </div>
+
+                {/* Action button — only for winners and active */}
+                {won === true && (
+                  <div className="mt-3 flex gap-2">
+                    {holdingYes && (
+                      <button
+                        onClick={() => handleRedeem(pos, "yes")}
+                        disabled={redeeming === `${pos.marketPubkey.toBase58()}-yes`}
+                        className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-500 disabled:opacity-40 transition-all"
+                      >
+                        {redeeming === `${pos.marketPubkey.toBase58()}-yes`
+                          ? "Collecting..."
+                          : `Collect $${payout.toFixed(2)}`}
+                      </button>
+                    )}
+                    {holdingNo && (
+                      <button
+                        onClick={() => handleRedeem(pos, "no")}
+                        disabled={redeeming === `${pos.marketPubkey.toBase58()}-no`}
+                        className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-500 disabled:opacity-40 transition-all"
+                      >
+                        {redeeming === `${pos.marketPubkey.toBase58()}-no`
+                          ? "Collecting..."
+                          : `Collect $${payout.toFixed(2)}`}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {won === null && (
+                  <div className="mt-3">
+                    <Link
+                      href={`/trade/${pos.marketPubkey.toBase58()}`}
+                      className="block rounded-xl bg-gray-800/50 py-2.5 text-center text-sm font-bold text-gray-300 ring-1 ring-inset ring-gray-700/30 hover:bg-gray-700/50 transition-all"
+                    >
+                      View Market
+                    </Link>
+                  </div>
+                )}
+
+                {/* Lost positions: subtle note, no action */}
+                {won === false && (
+                  <p className="mt-2 text-center text-[11px] text-gray-600">
+                    Market settled — {pos.outcomeYesWins ? `${pos.ticker} closed above ${strikeStr}` : `${pos.ticker} closed below ${strikeStr}`}
+                  </p>
+                )}
               </div>
             );
           })}

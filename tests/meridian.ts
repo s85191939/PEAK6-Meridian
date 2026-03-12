@@ -1732,7 +1732,43 @@ describe("meridian", () => {
   });
 
   // ========================================================
-  // 22. Admin Settle Override with Time Delay (PRD requirement)
+  // 22. At-Strike Settlement (boundary case: price == strike → Yes wins)
+  // ========================================================
+
+  it("Settles market at-the-money — price == strike → Yes wins", async () => {
+    // Create a market with strike $200.00 and settle at exactly $200.00
+    // Per spec: "If closing_price >= strike_price → Yes wins"
+    // The boundary case (==) must resolve to Yes
+    const ticker8 = "AMZN";
+    const strikePrice8 = new BN(20000); // $200.00
+    const date8 = 20260306; // same date to pass time check on localnet
+
+    const [m8Pda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("market"), Buffer.from(ticker8),
+       strikePrice8.toArrayLike(Buffer, "le", 8),
+       new BN(date8).toArrayLike(Buffer, "le", 4)], program.programId);
+    const [ym8] = PublicKey.findProgramAddressSync(
+      [Buffer.from("yes_mint"), m8Pda.toBuffer()], program.programId);
+    const [nm8] = PublicKey.findProgramAddressSync(
+      [Buffer.from("no_mint"), m8Pda.toBuffer()], program.programId);
+
+    await program.methods.createMarket(ticker8, strikePrice8, date8)
+      .accounts({ admin: admin.publicKey, config: configPda, market: m8Pda,
+        yesMint: ym8, noMint: nm8, tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId } as any).rpc();
+
+    // Settle at EXACTLY the strike price
+    await program.methods.settleMarket(new BN(20000))
+      .accounts({ admin: admin.publicKey, config: configPda, market: m8Pda } as any).rpc();
+
+    const m8 = await program.account.market.fetch(m8Pda);
+    assert.equal(m8.settled, true, "Market should be settled");
+    assert.equal(m8.outcomeYesWins, true, "At-strike (price == strike) → Yes wins");
+    assert.equal(m8.settlementPrice.toNumber(), 20000, "Settlement price should match");
+  });
+
+  // ========================================================
+  // 23. Admin Settle Override with Time Delay (PRD requirement)
   // ========================================================
 
   it("Admin settle override enforces 1-hour delay after market close", async () => {

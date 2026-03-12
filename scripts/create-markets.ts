@@ -4,7 +4,7 @@
  * create-markets.ts — Morning script to create daily strike markets.
  *
  * For each MAG7 stock, creates strike markets at:
- *   ±3%, ±6%, ±9% from previous close, rounded to $10, deduplicated.
+ *   ATM, ±3%, ±6%, ±9% from previous close, rounded to $10, deduplicated.
  *
  * Usage:
  *   npx ts-node scripts/create-markets.ts
@@ -35,7 +35,7 @@ const MAG7_STOCKS: Record<string, number> = {
 };
 
 // Strike offsets from previous close
-const STRIKE_OFFSETS = [-0.09, -0.06, -0.03, 0.03, 0.06, 0.09];
+const STRIKE_OFFSETS = [-0.09, -0.06, -0.03, 0, 0.03, 0.06, 0.09];
 
 function getDateInt(): number {
   const now = new Date();
